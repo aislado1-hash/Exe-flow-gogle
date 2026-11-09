@@ -181,7 +181,7 @@ async def _gen_image(prompt, ratio, model, count, image, out_path, refs=None) ->
     return await flow.download_latest(out_path, resolution="1K", is_video=False)
 
 
-async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False, resolution=None) -> str:
+async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False, resolution=None, download=True) -> str:
     if count != 1:
         raise ValueError("Esta CLI descarga un video por trabajo. Para un lote, usa varios jobs video con count=1.")
     if from_latest and not end:
@@ -202,6 +202,9 @@ async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration
     pre = await flow.get_canvas_count()
     await flow.submit_prompt(prompt)
     await flow.wait_for_video(pre_submit_count=pre)
+    if not download:
+        # Se queda en Flow; tú lo descargas a mano cuando quieras.
+        return "en Flow (sin descargar)"
     return await flow.download_latest(out_path, resolution="720p", is_video=True)
 
 
@@ -254,6 +257,7 @@ async def cmd_batch(args) -> int:
     d_vid_model = defaults.get("video_model", "Veo 3.1 - Lite")
     d_vid_duration = defaults.get("video_duration")
     d_vid_resolution = defaults.get("video_resolution")
+    d_dl_videos = defaults.get("download_videos", True)
     jobs = data.get("jobs", [])
 
     # Referencias con nombre: {"mackenzie": "refs/hoja.png", ...}. Rutas relativas
@@ -311,6 +315,7 @@ async def cmd_batch(args) -> int:
                         job.get("duration", d_vid_duration),
                         from_latest=from_latest,
                         resolution=job.get("resolution", d_vid_resolution),
+                        download=job.get("download", d_dl_videos),
                     )
                 else:
                     print(f"  tipo desconocido '{jtype}', saltando.")
@@ -332,12 +337,19 @@ async def cmd_batch(args) -> int:
                     print(f"  No se pudo guardar el diagnóstico: {debug_error}")
                 results.append({"name": name, "type": jtype, "ok": False, "error": str(e)})
     finally:
+        try:
+            project_url = (await flow.get_page()).url
+        except Exception:
+            project_url = None
         await flow.shutdown()
 
     report = project_dir / "batch_report.json"
-    report.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    report.write_text(json.dumps({"flow_project_url": project_url, "results": results},
+                                 indent=2, ensure_ascii=False), encoding="utf-8")
     ok = sum(1 for r in results if r.get("ok"))
     print(f"\nBATCH terminado: {ok}/{len(results)} OK. Carpeta: {project_dir}")
+    if project_url:
+        print(f"Proyecto en Flow: {project_url}")
     return 0 if ok == len(results) else 1
 
 

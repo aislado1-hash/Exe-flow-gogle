@@ -139,7 +139,7 @@ async def select_image_mode(
             await menu_item.wait_for(state="visible", timeout=8_000)
             await menu_item.click()
             await page.wait_for_function(
-                """target => {
+                r"""target => {
                     const b = document.querySelector('flow-prompt-box-settings button[aria-label="Seleccionar familia de modelos"]');
                     const clean = s => s.replace(/arrow_drop_down/g, '').replace(/🍌/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
                     return b && clean(b.innerText) === target;
