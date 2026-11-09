@@ -4,6 +4,7 @@ Selección de items del canvas y upload de frames para modo Fotogramas/Ingredien
 from .browser import get_page
 from .registry import capture_name
 import re
+from pathlib import Path
 
 SEL_ADD_INGREDIENT = (
     'button.add-menu-trigger, '
@@ -585,71 +586,58 @@ async def close_overlays() -> None:
             pass
 
 
-async def attach_reference(image_path: str) -> None:
-    """Sube una referencia con «Subir archivo…» y la añade a la petición.
-    Llamar después de select_image_mode y antes de submit_prompt."""
+_SEL_TILES = 'flow-tile-container, flow-grid-tile-container, [aria-roledescription="draggable"]'
+
+
+def _tile_by_name(page, file_name: str):
+    """Tarjeta del proyecto cuyo rótulo es el nombre del archivo subido."""
+    return page.locator(_SEL_TILES).filter(
+        has_text=re.compile(re.escape(file_name), re.I)).first
+
+
+async def upload_reference(image_path: str) -> None:
+    """Sube una referencia al proyecto con «Subir archivo…» (solo una vez).
+    Queda como tarjeta con el nombre del archivo; no la añade a la petición."""
+    page = await get_page()
+    name = Path(image_path).name
+    tile = _tile_by_name(page, name)
+    if await tile.count() > 0:
+        print(f"  [ref] {name} ya está en el proyecto.")
+        return
     try:
-        await _attach_reference(image_path)
+        await close_overlays()
+        upload_btn = await _open_resources_dialog(page)
+        await _switch_panel_tab(page, _ALL_TAB_RE)
+        print(f"  [ref] Subiendo {name}...")
+        async with page.expect_file_chooser(timeout=8_000) as fc_info:
+            await upload_btn.click(force=True)
+        file_chooser = await fc_info.value
+        await file_chooser.set_files(str(image_path))
+        await _await_user_rights_notice(page)
+        # Esperar a que la subida termine (la tarjeta aparece en el proyecto)
+        # antes de cerrar el panel.
+        await tile.wait_for(state="attached", timeout=90_000)
+    finally:
+        await close_overlays()
+    await tile.wait_for(state="visible", timeout=30_000)
+    print(f"  [ref] {name} subida al proyecto.")
+
+
+async def add_reference_to_prompt(image_path: str) -> None:
+    """Busca la tarjeta de la referencia por su nombre y pulsa
+    ⋮ → «Añadir a la petición». Llamar DESPUÉS de configurar el modelo."""
+    from .download import _open_card_menu
+    page = await get_page()
+    name = Path(image_path).name
+    tile = _tile_by_name(page, name)
+    await tile.wait_for(state="visible", timeout=15_000)
+    try:
+        await _open_card_menu(page, tile, is_video=False, caller="ref")
+        item = page.get_by_role("menuitem", name=_ADD_TO_PROMPT_RE).first
+        await item.wait_for(state="visible", timeout=5_000)
+        await item.click()
+        await page.wait_for_timeout(1_000)
+        print(f"  [ref] {name} añadida a la petición.")
     except Exception:
         await close_overlays()
-        raise
-
-
-async def _attach_reference(image_path: str) -> None:
-    page = await get_page()
-    try:
-        settings_panel = page.locator("flow-prompt-box-settings")
-        if await settings_panel.count() > 0 and await settings_panel.first.is_visible():
-            await page.keyboard.press("Escape")
-            await page.wait_for_timeout(500)
-    except Exception:
-        pass
-
-    slots_before = await page.locator(SEL_SLOT_LOADED).count()
-    upload_btn = await _open_resources_dialog(page)
-    await _switch_panel_tab(page, _ALL_TAB_RE)
-
-    # Contenedor del panel: la capa flotante que contiene «Subir archivo…».
-    # (En Flow no es role="dialog", es un overlay de Angular CDK.)
-    dialog = await upload_btn.evaluate_handle("""b => b.closest(
-        '[role=dialog], .cdk-overlay-pane, flow-add-menu-popover-content, mat-dialog-container'
-    ) || b.parentElement.parentElement.parentElement""")
-    srcs_before = await dialog.evaluate("d => [...d.querySelectorAll('img')].map(i => i.src)")
-
-    print(f"  [ref] Subiendo {image_path}...")
-    async with page.expect_file_chooser(timeout=8_000) as fc_info:
-        await upload_btn.click(force=True)
-    file_chooser = await fc_info.value
-    await file_chooser.set_files(str(image_path))
-    await _await_user_rights_notice(page)
-
-    # Esperar a que aparezca la miniatura nueva y seleccionarla.
-    await page.wait_for_function(
-        """([d, before]) => [...d.querySelectorAll('img')].some(
-              i => !before.includes(i.src) && i.complete && i.naturalWidth > 0)""",
-        arg=[dialog, srcs_before], timeout=90_000)
-    await dialog.evaluate("""(d, before) => {
-        const imgs = [...d.querySelectorAll('img')].filter(
-            i => !before.includes(i.src) && i.complete && i.naturalWidth > 0);
-        // La más pequeña es la de la lista (la grande es la vista previa).
-        imgs.sort((a, b) => a.width * a.height - b.width * b.height);
-        const target = imgs[0].closest('button, [role="button"], [role="option"], li') || imgs[0];
-        target.click();
-    }""", srcs_before)
-    await page.wait_for_timeout(800)
-
-    add_btn = page.locator('button, [role="button"]').filter(has_text=_ADD_TO_PROMPT_RE).first
-    await add_btn.wait_for(state="visible", timeout=15_000)
-    await add_btn.click()
-    try:
-        await add_btn.wait_for(state="hidden", timeout=15_000)
-    except Exception:
-        await page.keyboard.press("Escape")
-    try:
-        await page.wait_for_function(
-            f"() => document.querySelectorAll('{SEL_SLOT_LOADED}').length > {slots_before}",
-            timeout=15_000)
-        print("  [ref] Añadida a la petición.")
-    except Exception:
-        print("  [ref] Aviso: no veo la miniatura en la petición, sigo igualmente.")
-    await page.wait_for_timeout(500)
+        raise RuntimeError(f"No pude añadir {name} a la petición desde su menú ⋮.")

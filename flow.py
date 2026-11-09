@@ -170,9 +170,11 @@ async def _gen_image(prompt, ratio, model, count, image, out_path, refs=None) ->
     if count != 1:
         raise ValueError("Esta CLI descarga una imagen por trabajo. Para un lote, usa varios jobs image con count=1.")
     await flow.select_image_mode(aspect_ratio=ratio, count=count, model=model)
-    # Referencias (modelo, cabina, camión…): se suben y se añaden a la petición.
+    # Referencias (modelo, cabina, camión…): con Nano Banana ya configurado,
+    # se añaden desde su tarjeta del proyecto (⋮ → Añadir a la petición).
     for ref in ([image] if isinstance(image, str) else (image or [])) + list(refs or []):
-        await flow.attach_reference(ref)
+        await flow.upload_reference(ref)       # no hace nada si ya está subida
+        await flow.add_reference_to_prompt(ref)
     pre = await flow.get_canvas_count()
     await flow.submit_prompt(prompt)
     await flow.wait_for_image(pre_submit_count=pre)
@@ -276,6 +278,10 @@ async def cmd_batch(args) -> int:
     await flow.startup()
     try:
         await flow.create_project()
+        # Subir una sola vez todas las referencias que usan los trabajos.
+        used = {r for job in jobs for r in (job.get("refs") or defaults.get("refs") or [])}
+        for key in sorted(used):
+            await flow.upload_reference(references.get(key, key))
         for i, job in enumerate(jobs, 1):
             jtype = job.get("type", "image")
             name = job.get("name") or f"{jtype}_{i:02d}"
