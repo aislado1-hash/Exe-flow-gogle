@@ -569,9 +569,33 @@ async def _open_resources_dialog(page):
     raise RuntimeError("No pude abrir el panel de recursos con «Subir archivo…».")
 
 
+async def close_overlays() -> None:
+    """Cierra paneles/menús flotantes que quedaran abiertos (tras un error)."""
+    page = await get_page()
+    backdrop = page.locator(".cdk-overlay-backdrop-showing")
+    for _ in range(4):
+        if await backdrop.count() == 0:
+            return
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(400)
+    if await backdrop.count() > 0:
+        try:
+            await backdrop.first.click(force=True)
+        except Exception:
+            pass
+
+
 async def attach_reference(image_path: str) -> None:
     """Sube una referencia con «Subir archivo…» y la añade a la petición.
     Llamar después de select_image_mode y antes de submit_prompt."""
+    try:
+        await _attach_reference(image_path)
+    except Exception:
+        await close_overlays()
+        raise
+
+
+async def _attach_reference(image_path: str) -> None:
     page = await get_page()
     try:
         settings_panel = page.locator("flow-prompt-box-settings")
@@ -585,10 +609,11 @@ async def attach_reference(image_path: str) -> None:
     upload_btn = await _open_resources_dialog(page)
     await _switch_panel_tab(page, _ALL_TAB_RE)
 
-    # Miniaturas que ya había en el diálogo, para reconocer la nueva subida.
-    dialog = page.locator('[role="dialog"]:visible').filter(has=upload_btn).last
-    if await dialog.count() == 0:
-        dialog = page.locator('[role="dialog"]:visible').last
+    # Contenedor del panel: la capa flotante que contiene «Subir archivo…».
+    # (En Flow no es role="dialog", es un overlay de Angular CDK.)
+    dialog = await upload_btn.evaluate_handle("""b => b.closest(
+        '[role=dialog], .cdk-overlay-pane, flow-add-menu-popover-content, mat-dialog-container'
+    ) || b.parentElement.parentElement.parentElement""")
     srcs_before = await dialog.evaluate("d => [...d.querySelectorAll('img')].map(i => i.src)")
 
     print(f"  [ref] Subiendo {image_path}...")
@@ -599,11 +624,10 @@ async def attach_reference(image_path: str) -> None:
     await _await_user_rights_notice(page)
 
     # Esperar a que aparezca la miniatura nueva y seleccionarla.
-    handle = await dialog.element_handle()
     await page.wait_for_function(
         """([d, before]) => [...d.querySelectorAll('img')].some(
               i => !before.includes(i.src) && i.complete && i.naturalWidth > 0)""",
-        arg=[handle, srcs_before], timeout=90_000)
+        arg=[dialog, srcs_before], timeout=90_000)
     await dialog.evaluate("""(d, before) => {
         const imgs = [...d.querySelectorAll('img')].filter(
             i => !before.includes(i.src) && i.complete && i.naturalWidth > 0);

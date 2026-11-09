@@ -282,6 +282,7 @@ async def cmd_batch(args) -> int:
             prompt = job.get("prompt", "")
             ratio = job.get("ratio", d_ratio)
             print(f"\n--- [{i}/{len(jobs)}] {jtype} :: {name} ---")
+            await flow.close_overlays()  # por si el trabajo anterior dejó un panel abierto
             try:
                 if jtype == "image":
                     out_path = _out_path(project_dir, name, "png")

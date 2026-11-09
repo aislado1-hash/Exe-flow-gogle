@@ -27,6 +27,7 @@ from .canvas import (
     capture_newest_asset_name,
     animate_latest_image,
     attach_reference,
+    close_overlays,
 )
 from .prompt import submit_prompt
 from .wait import wait_for_image, wait_for_video
@@ -36,7 +37,7 @@ __all__ = [
     "startup", "shutdown", "get_page", "get_lock",
     "create_project", "navigate_to_project",
     "select_ingredients_by_name", "select_frame_from_project",
-    "upload_frame", "animate_latest_image", "attach_reference", "get_canvas_count", "capture_newest_asset_name",
+    "upload_frame", "animate_latest_image", "attach_reference", "close_overlays", "get_canvas_count", "capture_newest_asset_name",
     "submit_prompt",
     "wait_for_image", "wait_for_video",
     "download_latest",
