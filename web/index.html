@@ -75,7 +75,6 @@
   .plano.habla { border-left: 3px solid var(--accent); }
   .plano.foto { border-left: 3px solid #8a8f98; }
   .plano.foto_video { border-left: 3px solid var(--run); }
-  .plano.video { border-left: 3px solid #b38cf5; }
   .plano .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
   .plano .num { font-weight: 600; min-width: 64px; }
   .plano .tiempo { color: var(--muted); font-size: 12px; margin-right: auto; }
@@ -90,7 +89,7 @@
   .plano .extra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .timeline { display: flex; height: 26px; border-radius: 8px; overflow: hidden; margin-bottom: 12px; background: var(--panel2); }
   .timeline div { display: grid; place-items: center; font-size: 11px; color: #111; border-right: 1px solid var(--bg); overflow: hidden; white-space: nowrap; cursor: pointer; }
-  .tl-foto { background: #8a8f98; } .tl-foto_video { background: var(--run); } .tl-habla { background: var(--accent); } .tl-video { background: #b38cf5; }
+  .tl-foto { background: #8a8f98; } .tl-foto_video { background: var(--run); } .tl-habla { background: var(--accent); }
   #jsonBox textarea { margin-top: 8px; }
   details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
 </style>
@@ -261,9 +260,9 @@ $("cuentaAdd").onclick = async () => {
 $("cuentasReload").onclick = (e) => { e.preventDefault(); cargarCuentas(); };
 
 /* ---------- Guion: editor de planos ---------- */
-// Un "plano" es lo que tú decides: foto + vídeo, solo foto, hablando o solo vídeo.
+// Un "plano" es lo que tú decides: foto + vídeo, solo foto o hablando.
 const MODOS = {
-  foto_video: "Foto + vídeo", foto: "Solo foto", habla: "Hablando", video: "Solo vídeo"
+  foto_video: "Foto + vídeo", foto: "Solo foto", habla: "Hablando"
 };
 const FIN_VIDEO = " La cámara permanece fija, mismo ángulo.";
 const PLANTILLA_HABLA = "Ella mira a cámara y dice en español, con voz natural y tono cercano: «…». Gestos naturales al hablar, parpadeo normal." + FIN_VIDEO;
@@ -292,7 +291,7 @@ function planosDesdeJobs(jobs) {
     } else if (j.start_ref) {
       out.push({modo: "habla", refHabla: j.start_ref, vid: j.prompt || "", dur: j.duration || "6s", model: j.model || ""});
     } else {
-      out.push({modo: "video", vid: j.prompt || "", dur: j.duration || "", model: j.model || ""});
+      out.push({modo: "foto_video", refs: [], img: "", vid: j.prompt || "", dur: j.duration || "", model: j.model || ""});
     }
   });
   return out;
@@ -312,9 +311,8 @@ function jobsDesdePlanos() {
       if (p.modo === "foto" && p.pantalla) img.screen_time = p.pantalla;
       jobs.push(img);
     }
-    if (p.modo === "foto_video" || p.modo === "video") {
-      const v = {type: "video", name: p.modo === "video" ? `${name}_vid` : `${name}_anim`, prompt: p.vid};
-      if (p.modo === "foto_video") v.start = name;
+    if (p.modo === "foto_video") {
+      const v = {type: "video", name: `${name}_anim`, start: name, prompt: p.vid};
       if (p.dur) v.duration = p.dur;
       if (p.model) v.model = p.model;
       jobs.push(v);
@@ -379,7 +377,7 @@ function pintarPlanos() {
         <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>` : ""}
       ${p.modo === "habla" ? `<span class="lbl">Foto de ella hablando</span>
         <select data-i="${i}" data-k="refHabla">${[...new Set([refHablaDefecto, ...refsActuales])].map(r => `<option ${(p.refHabla || refHablaDefecto) === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>` : ""}
-      ${conVid ? `<span class="lbl">${p.modo === "habla" ? "Lo que dice (cambia el texto entre « »)" : p.modo === "video" ? "Prompt del vídeo (sin foto)" : "Prompt de la animación"}</span>
+      ${conVid ? `<span class="lbl">${p.modo === "habla" ? "Lo que dice (cambia el texto entre « »)" : "Prompt de la animación"}</span>
         <textarea data-i="${i}" data-k="vid">${esc(p.vid)}</textarea>` : ""}
       <div class="extra">
         ${conVid ? `<div><span class="lbl">Duración</span><select data-i="${i}" data-k="dur">
