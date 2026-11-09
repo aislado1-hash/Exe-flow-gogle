@@ -467,3 +467,69 @@ async def capture_newest_asset_name(label: str, is_video: bool = False) -> str:
     capture_name(label, uuid)
     print(f"  📌 Registry: Guardado '{label}' -> {uuid}")
     return uuid
+
+
+# ---------------------------------------------------------------------------
+# Animar la imagen más reciente del proyecto (sin subirla desde el PC)
+# ---------------------------------------------------------------------------
+async def _click_card_menu_item(page, texto: re.Pattern) -> bool:
+    """Pulsa una entrada del menú ⋮ ya abierto. Devuelve False si no existe."""
+    item = page.get_by_role("menuitem", name=texto)
+    try:
+        await item.first.wait_for(state="visible", timeout=4_000)
+    except Exception:
+        return False
+    await item.first.click()
+    await page.wait_for_timeout(800)
+    return True
+
+
+async def _wait_frame_loaded(page, initial_count: int, timeout: int = 20_000) -> None:
+    await page.wait_for_function(
+        f"""() => {{
+            const imgs = document.querySelectorAll('{SEL_SLOT_LOADED}');
+            if (imgs.length <= {initial_count}) return false;
+            return [...imgs].some(img => img.complete && img.naturalWidth > 0);
+        }}""",
+        timeout=timeout,
+    )
+
+
+async def animate_latest_image(configure_video) -> str:
+    """Usa la imagen más reciente del proyecto como fotograma inicial.
+
+    1º intenta ⋮ → «Animar». Si no existe, configura vídeo y usa
+    ⋮ → «Añadir a la petición». `configure_video` es una corrutina sin
+    argumentos que deja el panel en Vídeo/Fotogramas con modelo y formato.
+    Devuelve qué opción se usó.
+    """
+    from .download import _sel_card, _open_card_menu
+    page = await get_page()
+    card = page.locator(_sel_card(is_video=False)).first
+    await card.wait_for(state="visible", timeout=30_000)
+    initial_count = await page.locator(SEL_SLOT_LOADED).count()
+
+    # Opción 1: Animar
+    print("  [animar] Abriendo menú ⋮ de la última imagen...")
+    await _open_card_menu(page, card, is_video=False, caller="animate")
+    if await _click_card_menu_item(page, re.compile(r"^\s*(Animar|Animate)\s*$", re.I)):
+        print("  [animar] Opción «Animar» pulsada.")
+        await configure_video()
+        try:
+            await _wait_frame_loaded(page, initial_count)
+        except Exception:
+            print("  [animar] Aviso: no veo la miniatura en el slot, sigo igualmente.")
+        return "animar"
+
+    # Opción 2: Añadir a la petición
+    await page.keyboard.press("Escape")
+    print("  [animar] Sin «Animar»; probando «Añadir a la petición»...")
+    await configure_video()
+    await _open_card_menu(page, card, is_video=False, caller="animate")
+    if await _click_card_menu_item(page, re.compile(r"(Añadir a la petición|Agregar a la instrucción|Add to prompt)", re.I)):
+        print("  [animar] Opción «Añadir a la petición» pulsada.")
+        await _wait_frame_loaded(page, initial_count)
+        return "añadir"
+
+    await page.keyboard.press("Escape")
+    raise RuntimeError("No encontré «Animar» ni «Añadir a la petición» en el menú de la imagen.")

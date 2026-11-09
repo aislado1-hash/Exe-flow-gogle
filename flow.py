@@ -178,10 +178,15 @@ async def _gen_image(prompt, ratio, model, count, image, out_path) -> str:
     return await flow.download_latest(out_path, resolution="1K", is_video=False)
 
 
-async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None) -> str:
+async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False) -> str:
     if count != 1:
         raise ValueError("Esta CLI descarga un video por trabajo. Para un lote, usa varios jobs video con count=1.")
-    if start and end:
+    if from_latest and not end:
+        # La imagen acaba de generarse en este proyecto: se anima desde su menú ⋮
+        async def _config():
+            await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration)
+        await flow.animate_latest_image(_config)
+    elif start and end:
         await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration)
         await flow.upload_frame(start, slot="initial")
         await asyncio.sleep(3)
@@ -254,6 +259,7 @@ async def cmd_batch(args) -> int:
 
     print(f"BATCH '{project}': {len(jobs)} trabajos. Salida -> {project_dir}")
     results = []
+    last_image_name = None
     await flow.startup()
     try:
         await flow.create_project()
@@ -273,16 +279,23 @@ async def cmd_batch(args) -> int:
                     )
                 elif jtype == "video":
                     out_path = _out_path(project_dir, name, "mp4")
+                    # Si "start" es la imagen del trabajo anterior, se anima desde Flow
+                    from_latest = bool(
+                        job.get("start") and job.get("start_mode") != "upload"
+                        and last_image_name and Path(job["start"]).stem == last_image_name
+                    )
                     saved = await _gen_video(
                         prompt, ratio, job.get("model", d_vid_model),
                         int(job.get("count", 1)),
                         _resolve_asset(project_dir, job.get("start")),
                         _resolve_asset(project_dir, job.get("end")), out_path,
                         job.get("duration", d_vid_duration),
+                        from_latest=from_latest,
                     )
                 else:
                     print(f"  tipo desconocido '{jtype}', saltando.")
                     continue
+                last_image_name = name if jtype == "image" else None
                 print(f"  OK -> {saved}")
                 results.append({"name": name, "type": jtype, "file": saved, "ok": True})
             except Exception as e:
