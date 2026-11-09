@@ -81,6 +81,7 @@
   .plano select { width: auto; padding: 5px 8px; }
   .plano .mini { padding: 4px 9px; font-size: 12.5px; }
   .plano textarea { min-height: 62px; font: 13px/1.45 system-ui, sans-serif; margin-top: 4px; }
+  .plano input.narr { font-style: italic; }
   .plano .lbl { font-size: 12px; color: var(--muted); margin-top: 8px; display: block; }
   .plano .refsel { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
   .refchip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); cursor: pointer; color: var(--muted); user-select: none; }
@@ -286,12 +287,12 @@ function planosDesdeJobs(jobs) {
       const k = jobs.findIndex((v, n) => n > i && !usados.has(n) && (v.type === "video") && v.start && v.start.replace(/\.\w+$/, "") === j.name);
       if (k >= 0) {
         usados.add(k); const v = jobs[k];
-        out.push({modo: "foto_video", refs: j.refs || [], img: j.prompt || "", vid: v.prompt || "", dur: v.duration || "", model: v.model || ""});
-      } else out.push({modo: "foto", refs: j.refs || [], img: j.prompt || "", pantalla: j.screen_time || ""});
+        out.push({modo: "foto_video", refs: j.refs || [], img: j.prompt || "", vid: v.prompt || "", dur: v.duration || "", model: v.model || "", texto: j.texto || v.texto || ""});
+      } else out.push({modo: "foto", refs: j.refs || [], img: j.prompt || "", pantalla: j.screen_time || "", texto: j.texto || ""});
     } else if (j.start_ref) {
-      out.push({modo: "habla", refHabla: j.start_ref, vid: j.prompt || "", dur: j.duration || "6s", model: j.model || ""});
+      out.push({modo: "habla", refHabla: j.start_ref, vid: j.prompt || "", dur: j.duration || "6s", model: j.model || "", texto: j.texto || ""});
     } else {
-      out.push({modo: "foto_video", refs: [], img: "", vid: j.prompt || "", dur: j.duration || "", model: j.model || ""});
+      out.push({modo: "foto_video", refs: [], img: "", vid: j.prompt || "", dur: j.duration || "", model: j.model || "", texto: j.texto || ""});
     }
   });
   return out;
@@ -303,11 +304,13 @@ function jobsDesdePlanos() {
     if (p.modo === "habla") {
       h++; const job = {type: "video", name: `habla${String(h).padStart(2, "0")}`, start_ref: p.refHabla || refHablaDefecto,
                         duration: p.dur || "6s", prompt: p.vid};
+      if (p.texto) job.texto = p.texto;
       if (p.model) job.model = p.model; jobs.push(job); continue;
     }
     n++; const name = `plano${String(n).padStart(2, "0")}`;
     if (p.modo === "foto" || p.modo === "foto_video") {
       const img = {type: "image", name, refs: p.refs || [], prompt: p.img};
+      if (p.texto) img.texto = p.texto;
       if (p.modo === "foto" && p.pantalla) img.screen_time = p.pantalla;
       jobs.push(img);
     }
@@ -371,6 +374,8 @@ function pintarPlanos() {
         <button class="mini" data-dup="${i}" title="Duplicar">⧉</button>
         <button class="mini danger" data-del-pl="${i}" title="Borrar">✕</button>
       </div>
+      <span class="lbl">Narración de este plano (la frase de tu audio que va aquí; para el montaje)</span>
+      <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto || "")}" placeholder="${p.modo === "habla" ? "La frase que dice ella" : "Vacío = sigue con la frase del plano anterior"}">
       ${conFoto ? `<span class="lbl">Referencias de la foto</span>
         <div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="muted">Sube referencias arriba.</span>`}</div>
         <span class="lbl">Prompt de la foto</span>
@@ -455,7 +460,7 @@ $("ejemplo").onclick = () => {
   $("proyecto").value = "prueba_web";
   planos = [
     {modo: "foto_video", refs: ["mackenzie", "cabina"], img: "Usa a la mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia. Luz suave de mañana, plano medio lateral, cámara fija, foto realista.",
-     vid: "Ella ajusta el retrovisor y luego mira al frente. Movimiento natural." + FIN_VIDEO + " Ella no habla.", dur: "", model: ""},
+     vid: "Ella ajusta el retrovisor y luego mira al frente. Movimiento natural." + FIN_VIDEO + " Ella no habla.", dur: "", model: "", texto: "Son las seis de la mañana y ya estoy en la cabina."},
     {modo: "habla", refHabla: refHablaDefecto, vid: "Ella mira a cámara y dice en español, con voz natural y tono cercano: «Hoy os enseño cómo empieza mi día en la cabina». Gestos naturales al hablar, parpadeo normal." + FIN_VIDEO, dur: "6s", model: ""},
     {modo: "foto", refs: ["camion"], img: "El camión de la referencia aparcado en un área de servicio al amanecer. Plano general, cámara fija, foto realista.", pantalla: "5s"}
   ];
