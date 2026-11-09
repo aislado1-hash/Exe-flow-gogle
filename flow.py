@@ -48,6 +48,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 import flow_provider as flow
+import flow_multi
 from flow_provider import settings
 
 # Consola UTF-8 en Windows (acentos/emojis sin romper la salida).
@@ -411,6 +412,15 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--name", default=None)
     pv.add_argument("--out", default=str(DEFAULT_OUT))
 
+    pm = sub.add_parser("multi", help="Repartir un guion JSON entre varias cuentas a la vez.")
+    pm.add_argument("jobfile")
+    pm.add_argument("--cuentas", required=True, help="Lista separada por comas: cuenta1,cuenta2")
+    pm.add_argument("--escalonar", type=float, default=8.0,
+                    help="Segundos entre el arranque de cada Chrome (por defecto 8).")
+    pm.add_argument("--out", default=str(DEFAULT_OUT))
+
+    sub.add_parser("cuentas", help="Ver las cuentas con sesión guardada.")
+
     pb = sub.add_parser("batch", help="Ejecutar guion JSON de varios trabajos.")
     pb.add_argument("jobfile")
     pb.add_argument("--out", default=str(DEFAULT_OUT))
@@ -430,6 +440,8 @@ HANDLERS = {
     "video": cmd_video,
     "batch": cmd_batch,
     "clean": cmd_clean,
+    "multi": flow_multi.cmd_multi,
+    "cuentas": flow_multi.cmd_cuentas,
 }
 
 
@@ -452,7 +464,18 @@ def main() -> int:
     if len(sys.argv) == 2 and sys.argv[1] in ("nuro", "brpl", "--credits"):
         print(EASTER_EGG)
         return 0
-    args = build_parser().parse_args()
+    # --cuenta <nombre> (en cualquier posición): usar el perfil de esa cuenta.
+    argv = sys.argv[1:]
+    if "--cuenta" in argv:
+        i = argv.index("--cuenta")
+        if i + 1 >= len(argv):
+            print("Falta el nombre después de --cuenta")
+            return 1
+        cuenta = argv[i + 1]
+        del argv[i:i + 2]
+        settings.FLOW_CHROME_PROFILE = str(flow_multi.profile_dir(cuenta))
+        print(f"Cuenta: {cuenta}  (perfil {settings.FLOW_CHROME_PROFILE})")
+    args = build_parser().parse_args(argv)
     return asyncio.run(HANDLERS[args.cmd](args))
 
 
