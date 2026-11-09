@@ -533,3 +533,99 @@ async def animate_latest_image(configure_video) -> str:
 
     await page.keyboard.press("Escape")
     raise RuntimeError("No encontré «Animar» ni «Añadir a la petición» en el menú de la imagen.")
+
+
+# ---------------------------------------------------------------------------
+# Referencias (modelo, cabina, camión…) añadidas a la petición de imagen
+# ---------------------------------------------------------------------------
+_UPLOAD_RE = re.compile(
+    r"(Subir archivo|Cargar contenido multimedia|Cargar medios|Upload file|Upload media|Subir imagen)", re.I)
+_ADD_TO_PROMPT_RE = re.compile(
+    r"(Añadir a (la )?petición|Agregar a la instrucción|Add to prompt)", re.I)
+_SEL_ADD_FALLBACK = (
+    'button[aria-label*="Añadir" i], button[aria-label*="Agregar" i], '
+    'button[aria-label*="Add" i], button:has(:is(i, mat-icon):text-is("add"))'
+)
+
+
+async def _open_resources_dialog(page):
+    """Abre el diálogo de recursos (el del botón «Subir archivo…»)."""
+    upload_btn = page.locator('button, [role="button"]').filter(has_text=_UPLOAD_RE).first
+    if await upload_btn.count() > 0 and await upload_btn.is_visible():
+        return upload_btn
+    for sel in (SEL_ADD_INGREDIENT, _SEL_ADD_FALLBACK):
+        trigger = page.locator(sel).first
+        try:
+            await trigger.wait_for(state="visible", timeout=5_000)
+        except Exception:
+            continue
+        await trigger.click()
+        try:
+            await upload_btn.wait_for(state="visible", timeout=6_000)
+            return upload_btn
+        except Exception:
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(400)
+    raise RuntimeError("No pude abrir el panel de recursos con «Subir archivo…».")
+
+
+async def attach_reference(image_path: str) -> None:
+    """Sube una referencia con «Subir archivo…» y la añade a la petición.
+    Llamar después de select_image_mode y antes de submit_prompt."""
+    page = await get_page()
+    try:
+        settings_panel = page.locator("flow-prompt-box-settings")
+        if await settings_panel.count() > 0 and await settings_panel.first.is_visible():
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+    except Exception:
+        pass
+
+    slots_before = await page.locator(SEL_SLOT_LOADED).count()
+    upload_btn = await _open_resources_dialog(page)
+    await _switch_panel_tab(page, _ALL_TAB_RE)
+
+    # Miniaturas que ya había en el diálogo, para reconocer la nueva subida.
+    dialog = page.locator('[role="dialog"]:visible').filter(has=upload_btn).last
+    if await dialog.count() == 0:
+        dialog = page.locator('[role="dialog"]:visible').last
+    srcs_before = await dialog.evaluate("d => [...d.querySelectorAll('img')].map(i => i.src)")
+
+    print(f"  [ref] Subiendo {image_path}...")
+    async with page.expect_file_chooser(timeout=8_000) as fc_info:
+        await upload_btn.click(force=True)
+    file_chooser = await fc_info.value
+    await file_chooser.set_files(str(image_path))
+    await _await_user_rights_notice(page)
+
+    # Esperar a que aparezca la miniatura nueva y seleccionarla.
+    handle = await dialog.element_handle()
+    await page.wait_for_function(
+        """([d, before]) => [...d.querySelectorAll('img')].some(
+              i => !before.includes(i.src) && i.complete && i.naturalWidth > 0)""",
+        arg=[handle, srcs_before], timeout=90_000)
+    await dialog.evaluate("""(d, before) => {
+        const imgs = [...d.querySelectorAll('img')].filter(
+            i => !before.includes(i.src) && i.complete && i.naturalWidth > 0);
+        // La más pequeña es la de la lista (la grande es la vista previa).
+        imgs.sort((a, b) => a.width * a.height - b.width * b.height);
+        const target = imgs[0].closest('button, [role="button"], [role="option"], li') || imgs[0];
+        target.click();
+    }""", srcs_before)
+    await page.wait_for_timeout(800)
+
+    add_btn = page.locator('button, [role="button"]').filter(has_text=_ADD_TO_PROMPT_RE).first
+    await add_btn.wait_for(state="visible", timeout=15_000)
+    await add_btn.click()
+    try:
+        await add_btn.wait_for(state="hidden", timeout=15_000)
+    except Exception:
+        await page.keyboard.press("Escape")
+    try:
+        await page.wait_for_function(
+            f"() => document.querySelectorAll('{SEL_SLOT_LOADED}').length > {slots_before}",
+            timeout=15_000)
+        print("  [ref] Añadida a la petición.")
+    except Exception:
+        print("  [ref] Aviso: no veo la miniatura en la petición, sigo igualmente.")
+    await page.wait_for_timeout(500)

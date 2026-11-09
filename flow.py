@@ -166,12 +166,13 @@ async def cmd_status(_args) -> int:
 # ---------------------------------------------------------------------------
 # Generadores atomicos (asumen proyecto YA abierto)
 # ---------------------------------------------------------------------------
-async def _gen_image(prompt, ratio, model, count, image, out_path) -> str:
+async def _gen_image(prompt, ratio, model, count, image, out_path, refs=None) -> str:
     if count != 1:
         raise ValueError("Esta CLI descarga una imagen por trabajo. Para un lote, usa varios jobs image con count=1.")
     await flow.select_image_mode(aspect_ratio=ratio, count=count, model=model)
-    if image:
-        await flow.upload_standalone_image(image)
+    # Referencias (modelo, cabina, camión…): se suben y se añaden a la petición.
+    for ref in ([image] if isinstance(image, str) else (image or [])) + list(refs or []):
+        await flow.attach_reference(ref)
     pre = await flow.get_canvas_count()
     await flow.submit_prompt(prompt)
     await flow.wait_for_image(pre_submit_count=pre)
@@ -252,6 +253,18 @@ async def cmd_batch(args) -> int:
     d_vid_duration = defaults.get("video_duration")
     jobs = data.get("jobs", [])
 
+    # Referencias con nombre: {"mackenzie": "refs/hoja.png", ...}. Rutas relativas
+    # al JSON o a la carpeta actual.
+    json_dir = Path(args.jobfile).resolve().parent
+    references = {}
+    for key, ref_path in (data.get("references") or {}).items():
+        cand = [Path(ref_path), json_dir / ref_path]
+        found = next((c for c in cand if c.exists()), None)
+        if not found:
+            print(f"ERROR: no encuentro la referencia '{key}': {ref_path}")
+            return 1
+        references[key] = str(found.resolve())
+
     # Cada proyecto va a su propia subcarpeta: facil de revisar y de borrar.
     project = data.get("project") or f"proyecto_{_stamp()}"
     project_dir = Path(args.out) / _safe(project)
@@ -276,6 +289,8 @@ async def cmd_batch(args) -> int:
                         prompt, ratio, job.get("model", d_img_model),
                         int(job.get("count", 1)),
                         _resolve_asset(project_dir, job.get("image")), out_path,
+                        refs=[references[r] if r in references else r
+                              for r in (job.get("refs") or defaults.get("refs") or [])],
                     )
                 elif jtype == "video":
                     out_path = _out_path(project_dir, name, "mp4")
@@ -362,7 +377,8 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--ratio", default="9:16")
     pi.add_argument("--model", default="Nano Banana 2 Lite")
     pi.add_argument("--count", type=int, default=1)
-    pi.add_argument("--image", default=None, help="Imagen de referencia para editar.")
+    pi.add_argument("--image", action="append", default=None,
+                    help="Imagen de referencia. Repite --image para varias (modelo, cabina...).")
     pi.add_argument("--name", default=None)
     pi.add_argument("--out", default=str(DEFAULT_OUT))
 
