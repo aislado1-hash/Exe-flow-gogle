@@ -22,6 +22,7 @@ SEL_DL_RES = {
     "1K": '[role="menuitem"]:has-text("1K")',
     "2K": '[role="menuitem"]:has-text("2K")',
     "720p": '[role="menuitem"]:has-text("720p")',
+    "360p": '[role="menuitem"]:has-text("360p")',
 }
 
 

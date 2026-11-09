@@ -175,10 +175,47 @@ async def _select_radio(panel, name: str | re.Pattern[str]) -> None:
     await expect(control).to_have_attribute("aria-checked", "true", timeout=5_000)
 
 
+async def _set_duration(page, panel, seconds: int) -> None:
+    """Duración del clip. Versiones antiguas: botones «8 s»; actual: deslizador «Longitud»."""
+    radio = panel.get_by_role("radio", name=f"{seconds} s", exact=True)
+    if await radio.count() > 0:
+        await _select_radio(panel, f"{seconds} s")
+        return
+    slider = panel.get_by_role("slider").first
+    await slider.wait_for(state="visible", timeout=5_000)
+    read = "el => Number(el.value ?? el.getAttribute('aria-valuenow'))"
+    await slider.focus()
+    for _ in range(30):
+        current = await slider.evaluate(read)
+        if current == seconds:
+            break
+        await page.keyboard.press("ArrowRight" if current < seconds else "ArrowLeft")
+        await page.wait_for_timeout(120)
+        if await slider.evaluate(read) == current:  # tope del deslizador
+            break
+    final = await slider.evaluate(read)
+    if final != seconds:
+        raise RuntimeError(f"No pude poner la duración en {seconds} s (quedó en {final} s).")
+    print(f"    [config] Duración: {final} s")
+
+
+async def _set_resolution(panel, resolution: str) -> None:
+    """Resolución del vídeo (360p / 720p). El botón 360p lleva un icono de info al lado."""
+    pattern = re.compile(r"^\s*" + re.escape(resolution), re.I)
+    ctrl = panel.get_by_role("radio", name=pattern)
+    if await ctrl.count() > 0:
+        await _select_radio(panel, pattern)
+    else:
+        btn = panel.locator('button, [role="button"]').filter(has_text=pattern).first
+        await btn.wait_for(state="visible", timeout=5_000)
+        await btn.click()
+    print(f"    [config] Resolución: {resolution}")
+
+
 async def select_video_mode(
     aspect_ratio: str = "9:16", count: int = 1,
     mode: str = "fotogramas", model: str = "Veo 3.1 - Lite",
-    duration: str | None = None,
+    duration: str | None = None, resolution: str | None = None,
 ) -> None:
     from playwright.async_api import expect
     page = await get_page()
@@ -201,6 +238,8 @@ async def select_video_mode(
         seconds = re.fullmatch(r"(\d+)\s*s", duration.strip())
         if not seconds:
             raise ValueError(f"Duración inválida: {duration}")
-        await _select_radio(panel, f"{seconds.group(1)} s")
-    print(f"    [config] Video verificado: {target}, {mode}, {aspect_ratio}, x{count}, {duration}")
+        await _set_duration(page, panel, int(seconds.group(1)))
+    if resolution:
+        await _set_resolution(panel, resolution)
+    print(f"    [config] Video verificado: {target}, {mode}, {aspect_ratio}, x{count}, {duration}, {resolution}")
     await _close_settings(page)

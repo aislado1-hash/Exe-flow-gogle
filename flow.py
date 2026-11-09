@@ -181,24 +181,24 @@ async def _gen_image(prompt, ratio, model, count, image, out_path, refs=None) ->
     return await flow.download_latest(out_path, resolution="1K", is_video=False)
 
 
-async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False) -> str:
+async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False, resolution=None) -> str:
     if count != 1:
         raise ValueError("Esta CLI descarga un video por trabajo. Para un lote, usa varios jobs video con count=1.")
     if from_latest and not end:
         # La imagen acaba de generarse en este proyecto: se anima desde su menú ⋮
         async def _config():
-            await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration)
+            await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration, resolution=resolution)
         await flow.animate_latest_image(_config)
     elif start and end:
-        await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration)
+        await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration, resolution=resolution)
         await flow.upload_frame(start, slot="initial")
         await asyncio.sleep(3)
         await flow.upload_frame(end, slot="final")
     elif start:
-        await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration)
+        await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration, resolution=resolution)
         await flow.upload_frame(start, slot="initial")
     else:
-        await flow.select_video_mode(mode="texto", model=model, aspect_ratio=ratio, count=count, duration=duration)
+        await flow.select_video_mode(mode="texto", model=model, aspect_ratio=ratio, count=count, duration=duration, resolution=resolution)
     pre = await flow.get_canvas_count()
     await flow.submit_prompt(prompt)
     await flow.wait_for_video(pre_submit_count=pre)
@@ -235,7 +235,7 @@ async def cmd_video(args) -> int:
     await flow.startup()
     try:
         await flow.create_project()
-        saved = await _gen_video(args.prompt, args.ratio, args.model, args.count, args.start, args.end, out_path, args.duration)
+        saved = await _gen_video(args.prompt, args.ratio, args.model, args.count, args.start, args.end, out_path, args.duration, resolution=args.resolution)
         print(f"OK video -> {saved}")
         return 0
     finally:
@@ -253,6 +253,7 @@ async def cmd_batch(args) -> int:
     d_img_model = defaults.get("image_model", "Nano Banana 2 Lite")
     d_vid_model = defaults.get("video_model", "Veo 3.1 - Lite")
     d_vid_duration = defaults.get("video_duration")
+    d_vid_resolution = defaults.get("video_resolution")
     jobs = data.get("jobs", [])
 
     # Referencias con nombre: {"mackenzie": "refs/hoja.png", ...}. Rutas relativas
@@ -309,6 +310,7 @@ async def cmd_batch(args) -> int:
                         _resolve_asset(project_dir, job.get("end")), out_path,
                         job.get("duration", d_vid_duration),
                         from_latest=from_latest,
+                        resolution=job.get("resolution", d_vid_resolution),
                     )
                 else:
                     print(f"  tipo desconocido '{jtype}', saltando.")
@@ -390,6 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--ratio", default="9:16")
     pv.add_argument("--model", default="Veo 3.1 - Lite")
     pv.add_argument("--count", type=int, default=1)
+    pv.add_argument("--resolution", default=None, help="Resolución del vídeo: 360p o 720p.")
     pv.add_argument("--duration", default=None, help="Duracion del clip, por ejemplo 8s (si el modelo la admite).")
     pv.add_argument("--start", default=None, help="Fotograma inicial (imagen).")
     pv.add_argument("--end", default=None, help="Fotograma final (imagen).")
