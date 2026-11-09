@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>flow-mackenzie</title>
+<style>
+  :root {
+    --bg: #0e0f11; --panel: #17191c; --panel2: #1f2226; --line: #2a2e33;
+    --text: #e8e9eb; --muted: #9aa0a6; --accent: #f2b33d; --ok: #4cc38a;
+    --err: #ef5b5b; --run: #5aa9f5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+           border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--panel2); color: var(--muted); }
+  .badge.run { background: #173049; color: var(--run); }
+  .badge.ok { background: #13321f; color: var(--ok); }
+  .badge.err { background: #3a1717; color: var(--err); }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 24px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 18px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 12px; }
+  .refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .ref { background: var(--panel2); border: 1px dashed var(--line); border-radius: 10px; overflow: hidden;
+         display: flex; flex-direction: column; cursor: pointer; min-height: 120px; }
+  .ref.has { border-style: solid; }
+  .ref img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  .ref .ph { flex: 1; display: grid; place-items: center; color: var(--muted); font-size: 26px; }
+  .ref .nm { padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .ref .x { color: var(--muted); cursor: pointer; padding: 0 4px; }
+  .ref .x:hover { color: var(--err); }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  input[type=text], select, textarea { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+         border-radius: 8px; padding: 8px 10px; font: inherit; width: 100%; }
+  textarea { font: 12.5px/1.5 ui-monospace, Consolas, monospace; min-height: 260px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #f2b33d55; border-color: var(--accent); }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+           padding: 8px 14px; font: inherit; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: #444a52; }
+  button.primary { background: var(--accent); color: #1a1405; border-color: var(--accent); font-weight: 600; }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  button.danger { color: var(--err); }
+  .cuentas label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; cursor: pointer; }
+  .cuentas input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid2 label, .field label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .check input { accent-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td.p { color: var(--muted); font-size: 12.5px; max-width: 420px; }
+  .chip { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); color: var(--muted); }
+  .chip.generando { background: #173049; color: var(--run); }
+  .chip.hecho { background: #13321f; color: var(--ok); }
+  .chip.error, .chip.sin-terminar { background: #3a1717; color: var(--err); }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 6px; background: #2a2416; color: var(--accent); margin: 0 4px 3px 0; }
+  .tag.bad { background: #3a1717; color: var(--err); }
+  .thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; display: block; }
+  .errors { color: var(--err); font-size: 12.5px; margin-top: 8px; white-space: pre-line; }
+  pre.log { background: #0a0b0c; border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 320px;
+            overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; color: #c9cdd1; margin: 0; white-space: pre-wrap; }
+  .links a { color: var(--accent); }
+  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .head h2 { margin: 0; }
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel2); border: 1px solid var(--line);
+           padding: 10px 14px; border-radius: 10px; display: none; max-width: 420px; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>flow<span>-</span>mackenzie</h1>
+  <span id="estado" class="badge">listo</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>Referencias</h2>
+      <div class="refs" id="refs"></div>
+      <div class="row">
+        <input type="text" id="refNombre" placeholder="Otra referencia (p. ej. interior_noche)">
+        <button id="refAdd">Añadir</button>
+      </div>
+      <p class="muted">Haz clic en una tarjeta para subir o cambiar su foto. En el guion se usan por su nombre: <code>"refs": ["mackenzie", "cabina"]</code>.</p>
+      <input type="file" id="refFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+    </section>
+
+    <section>
+      <h2>Cuentas de Flow</h2>
+      <div class="cuentas" id="cuentas"></div>
+      <div class="row">
+        <input type="text" id="cuentaNueva" placeholder="Nombre de cuenta nueva">
+        <button id="cuentaAdd">Iniciar sesión</button>
+      </div>
+      <p class="muted">Se abre Chrome para que entres con esa cuenta. Al terminar, pulsa <a href="#" id="cuentasReload" style="color:var(--accent)">actualizar</a>.</p>
+    </section>
+
+    <section>
+      <h2>Ajustes</h2>
+      <div class="grid2">
+        <div><label>Modelo de imagen</label><input type="text" id="imgModel" value="Nano Banana 2.1"></div>
+        <div><label>Modelo de vídeo</label><input type="text" id="vidModel" value="Omni 1.2 Flash"></div>
+        <div><label>Formato</label>
+          <select id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select></div>
+        <div><label>Duración del vídeo</label>
+          <select id="dur"><option>4s</option><option>5s</option><option>6s</option><option>7s</option><option>8s</option></select></div>
+        <div><label>Resolución</label>
+          <select id="res"><option>360p</option><option>720p</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="dlVideos"> Descargar también los vídeos (si no, se quedan en Flow)</label>
+      <p class="muted">Estos ajustes se aplican a todo el guion. Un plano puede llevar los suyos propios en el JSON.</p>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <div class="head">
+        <h2>Guion</h2>
+        <div style="display:flex;gap:8px">
+          <button id="cargar">Cargar JSON…</button>
+          <button id="ejemplo">Ejemplo</button>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:10px"><label>Nombre del proyecto</label>
+        <input type="text" id="proyecto" placeholder="p. ej. manana_en_la_cabina"></div>
+      <textarea id="json" spellcheck="false" placeholder='Pega aquí el JSON del guion: { "jobs": [ ... ] }'></textarea>
+      <input type="file" id="jsonFile" accept=".json" hidden>
+      <div class="errors" id="errores"></div>
+      <div id="vista" style="margin-top:14px"></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="danger" id="parar" hidden>Parar</button>
+        <button class="primary" id="empezar">Empezar</button>
+      </div>
+    </section>
+
+    <section id="progreso" hidden>
+      <div class="head"><h2>Progreso</h2><span class="muted" id="progresoInfo"></span></div>
+      <div class="links" id="links"></div>
+      <table><thead><tr><th>Plano</th><th>Cuenta</th><th>Estado</th><th></th></tr></thead><tbody id="filas"></tbody></table>
+      <details><summary>Ver registro</summary><pre class="log" id="log"></pre></details>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let refsActuales = [];
+let refDestino = null;
+let pollTimer = null;
+
+function toast(msg, ms = 3500) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms);
+}
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Error");
+  return data;
+}
+function guardarLocal() {
+  try { localStorage.setItem("fm_estado", JSON.stringify({
+    json: $("json").value, proyecto: $("proyecto").value,
+    imgModel: $("imgModel").value, vidModel: $("vidModel").value, ratio: $("ratio").value,
+    dur: $("dur").value, res: $("res").value, dl: $("dlVideos").checked })); } catch {}
+}
+function cargarLocal() {
+  try {
+    const s = JSON.parse(localStorage.getItem("fm_estado") || "null"); if (!s) return;
+    $("json").value = s.json || ""; $("proyecto").value = s.proyecto || "";
+    for (const k of ["imgModel","vidModel","ratio","dur","res"]) if (s[k]) $(k).value = s[k];
+    $("dlVideos").checked = !!s.dl;
+  } catch {}
+}
+
+/* ---------- Referencias ---------- */
+async function cargarRefs() {
+  const {refs} = await api("/api/refs");
+  refsActuales = refs.map(r => r.name);
+  const fijos = ["mackenzie", "cabina", "camion"];
+  const todos = [...fijos, ...refs.map(r => r.name).filter(n => !fijos.includes(n))];
+  $("refs").innerHTML = todos.map(n => {
+    const r = refs.find(x => x.name === n);
+    return `<div class="ref ${r ? "has" : ""}" data-n="${esc(n)}">
+      ${r ? `<img src="${esc(r.url)}?t=${Date.now()}" alt="">` : `<div class="ph">+</div>`}
+      <div class="nm"><span>${esc(n)}</span>${r ? `<span class="x" data-del="${esc(n)}" title="Quitar">✕</span>` : ""}</div></div>`;
+  }).join("");
+  validar();
+}
+$("refs").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) { e.stopPropagation(); await api("/api/ref/borrar", {name: del.dataset.del}); return cargarRefs(); }
+  const card = e.target.closest(".ref"); if (!card) return;
+  refDestino = card.dataset.n; $("refFile").click();
+});
+$("refAdd").onclick = () => {
+  const n = $("refNombre").value.trim().replace(/[^\w-]/g, "_");
+  if (!n) return toast("Escribe un nombre para la referencia.");
+  refDestino = n; $("refFile").click();
+};
+$("refFile").onchange = async () => {
+  const f = $("refFile").files[0]; $("refFile").value = ""; if (!f || !refDestino) return;
+  const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.readAsDataURL(f); });
+  try { await api("/api/ref", {name: refDestino, filename: f.name, data}); $("refNombre").value = ""; toast(`Referencia «${refDestino}» guardada.`); }
+  catch (e) { toast(e.message); }
+  cargarRefs();
+};
+
+/* ---------- Cuentas ---------- */
+async function cargarCuentas() {
+  const prev = new Set([...document.querySelectorAll("#cuentas input:checked")].map(i => i.value));
+  const {cuentas} = await api("/api/cuentas");
+  $("cuentas").innerHTML = cuentas.length
+    ? cuentas.map(c => `<label><input type="checkbox" value="${esc(c)}" ${prev.size === 0 || prev.has(c) ? "checked" : ""}> ${esc(c)}</label>`).join("")
+    : `<p class="muted">Aún no hay cuentas. Añade una abajo.</p>`;
+}
+$("cuentaAdd").onclick = async () => {
+  const c = $("cuentaNueva").value.trim(); if (!c) return toast("Escribe un nombre de cuenta.");
+  await api("/api/login", {cuenta: c}); $("cuentaNueva").value = "";
+  toast(`Se abre Chrome para «${c}». Inicia sesión y luego pulsa actualizar.`, 6000);
+};
+$("cuentasReload").onclick = (e) => { e.preventDefault(); cargarCuentas(); };
+
+/* ---------- Guion ---------- */
+function leerGuion() {
+  const txt = $("json").value.trim(); if (!txt) return {guion: null, errores: []};
+  let g; try { g = JSON.parse(txt); } catch (e) { return {guion: null, errores: ["El JSON no es válido: " + e.message]}; }
+  if (Array.isArray(g)) g = {jobs: g};
+  const errores = [];
+  if (!Array.isArray(g.jobs) || !g.jobs.length) errores.push("El guion no tiene «jobs».");
+  const nombres = new Set();
+  (g.jobs || []).forEach((j, i) => {
+    j.type = j.type || "image"; j.name = j.name || `${j.type}_${String(i + 1).padStart(2, "0")}`;
+    if (nombres.has(j.name)) errores.push(`Nombre repetido: ${j.name}`); nombres.add(j.name);
+    if (!j.prompt) errores.push(`${j.name}: falta el prompt.`);
+    for (const r of j.refs || []) if (!refsActuales.includes(r) && !(g.references || {})[r]) errores.push(`${j.name}: falta la referencia «${r}».`);
+  });
+  return {guion: g, errores};
+}
+function validar() {
+  const {guion, errores} = leerGuion();
+  $("errores").textContent = errores.join("\n");
+  if (guion && guion.project && !$("proyecto").value) $("proyecto").value = guion.project;
+  $("vista").innerHTML = guion && guion.jobs ? `<table><thead><tr><th>Plano</th><th>Tipo</th><th>Referencias</th><th>Prompt</th></tr></thead><tbody>${
+    guion.jobs.map(j => `<tr><td>${esc(j.name)}</td><td>${j.type === "video" ? "vídeo" + (j.start ? ` ← ${esc(j.start)}` : "") : "imagen"}</td>
+      <td>${(j.refs || []).map(r => `<span class="tag ${refsActuales.includes(r) ? "" : "bad"}">${esc(r)}</span>`).join("")}</td>
+      <td class="p">${esc(j.prompt)}</td></tr>`).join("")}</tbody></table>` : "";
+  guardarLocal();
+  return {guion, errores};
+}
+$("json").addEventListener("input", validar);
+for (const id of ["proyecto","imgModel","vidModel","ratio","dur","res","dlVideos"]) $(id).addEventListener("change", guardarLocal);
+$("cargar").onclick = () => $("jsonFile").click();
+$("jsonFile").onchange = async () => {
+  const f = $("jsonFile").files[0]; $("jsonFile").value = ""; if (!f) return;
+  $("json").value = await f.text(); $("proyecto").value = ""; validar();
+};
+$("ejemplo").onclick = () => {
+  $("json").value = JSON.stringify({project: "prueba_web", jobs: [
+    {type: "image", name: "plano01", refs: ["mackenzie", "cabina"],
+     prompt: "Usa a la mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia. Luz suave de mañana, plano medio lateral, cámara fija, foto realista."},
+    {type: "video", name: "plano01_anim", start: "plano01",
+     prompt: "Ella ajusta el retrovisor y luego mira al frente. Movimiento natural. La cámara permanece fija, mismo ángulo. Ella no habla."}
+  ]}, null, 2);
+  $("proyecto").value = ""; validar();
+};
+
+/* ---------- Ejecutar ---------- */
+$("empezar").onclick = async () => {
+  const {guion, errores} = validar();
+  if (!guion || errores.length) return toast("Revisa el guion antes de empezar.");
+  const cuentas = [...document.querySelectorAll("#cuentas input:checked")].map(i => i.value);
+  if (!cuentas.length) return toast("Elige al menos una cuenta.");
+  guion.project = $("proyecto").value.trim() || guion.project;
+  guion.defaults = {...(guion.defaults || {}),
+    ratio: $("ratio").value, image_model: $("imgModel").value.trim(), video_model: $("vidModel").value.trim(),
+    video_duration: $("dur").value, video_resolution: $("res").value, download_videos: $("dlVideos").checked};
+  try { await api("/api/start", {guion, cuentas}); toast("En marcha. Se abrirá una ventana de Chrome por cuenta."); poll(); }
+  catch (e) { toast(e.message, 6000); }
+};
+$("parar").onclick = async () => { if (confirm("¿Parar el trabajo? Lo que esté generándose en Flow seguirá allí.")) await api("/api/stop", {}); };
+
+async function poll() {
+  clearTimeout(pollTimer);
+  let s; try { s = await api("/api/estado"); } catch { pollTimer = setTimeout(poll, 3000); return; }
+  pintarEstado(s);
+  if (s.running) pollTimer = setTimeout(poll, 2000);
+}
+function pintarEstado(s) {
+  const b = $("estado");
+  if (s.running) { b.className = "badge run"; b.textContent = "generando…"; }
+  else if (s.finished) {
+    const ok = s.planos.every(p => p.estado === "hecho");
+    b.className = "badge " + (ok ? "ok" : "err"); b.textContent = ok ? "terminado" : "terminado con errores";
+  } else { b.className = "badge"; b.textContent = "listo"; }
+  $("empezar").disabled = s.running; $("parar").hidden = !s.running;
+  if (!s.project) return;
+  $("progreso").hidden = false;
+  const hechos = s.planos.filter(p => p.estado === "hecho").length;
+  $("progresoInfo").textContent = `${s.project} · ${hechos}/${s.planos.length} hechos`;
+  $("links").innerHTML = Object.entries(s.links).map(([c, u]) => `<p>Proyecto de <b>${esc(c)}</b> en Flow: <a href="${esc(u)}" target="_blank" rel="noopener">abrir</a></p>`).join("");
+  $("filas").innerHTML = s.planos.map(p => `<tr>
+    <td>${esc(p.name)}<div class="muted">${p.type === "video" ? "vídeo" : "imagen"}</div></td>
+    <td>${esc(p.cuenta)}</td>
+    <td><span class="chip ${p.estado.replace(" ", "-")}">${esc(p.estado)}</span>
+        ${p.estado === "error" ? `<div class="muted" style="color:var(--err)">${esc(p.detalle)}</div>` : ""}</td>
+    <td>${p.thumb ? `<a href="${esc(p.thumb)}" target="_blank"><img class="thumb" src="${esc(p.thumb)}" alt=""></a>` : ""}</td></tr>`).join("");
+  const log = $("log"); const abajo = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = s.log.join("\n"); if (abajo) log.scrollTop = log.scrollHeight;
+}
+
+cargarLocal();
+cargarRefs(); cargarCuentas(); validar(); poll();
+</script>
+</body>
+</html>

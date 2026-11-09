@@ -18,3 +18,7 @@ session/*
 !session/LEEME.txt
 outputs/*
 !outputs/LEEME.txt
+
+# flow-mackenzie
+refs/
+session/perfiles/
