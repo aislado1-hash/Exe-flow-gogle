@@ -182,10 +182,15 @@ async def _gen_image(prompt, ratio, model, count, image, out_path, refs=None) ->
     return await flow.download_latest(out_path, resolution="1K", is_video=False)
 
 
-async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False, resolution=None, download=True) -> str:
+async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration=None, from_latest=False, resolution=None, download=True, start_ref=None) -> str:
     if count != 1:
         raise ValueError("Esta CLI descarga un video por trabajo. Para un lote, usa varios jobs video con count=1.")
-    if from_latest and not end:
+    if start_ref:
+        # Foto de referencia (ella hablando a cámara): se anima desde su tarjeta.
+        async def _config():
+            await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration, resolution=resolution)
+        await flow.animate_reference(start_ref, _config)
+    elif from_latest and not end:
         # La imagen acaba de generarse en este proyecto: se anima desde su menú ⋮
         async def _config():
             await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=count, duration=duration, resolution=resolution)
@@ -317,6 +322,7 @@ async def cmd_batch(args) -> int:
                         from_latest=from_latest,
                         resolution=job.get("resolution", d_vid_resolution),
                         download=job.get("download", d_dl_videos),
+                        start_ref=references.get(job["start_ref"], job["start_ref"]) if job.get("start_ref") else None,
                     )
                 else:
                     print(f"  tipo desconocido '{jtype}', saltando.")

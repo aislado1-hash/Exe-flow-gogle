@@ -68,7 +68,9 @@ class Job:
         refs = {p.stem: str(p) for p in REFS_DIR.glob("*") if p.suffix.lower() in IMG_EXT}
         refs.update(guion.get("references") or {})
         guion["references"] = refs
-        missing = sorted({r for j in guion.get("jobs", []) for r in (j.get("refs") or [])} - set(refs))
+        used = {r for j in guion.get("jobs", []) for r in (j.get("refs") or [])}
+        used |= {j["start_ref"] for j in guion.get("jobs", []) if j.get("start_ref")}
+        missing = sorted(used - set(refs))
         if missing:
             raise RuntimeError("Faltan referencias: " + ", ".join(missing))
 

@@ -243,7 +243,7 @@ function leerGuion() {
     j.type = j.type || "image"; j.name = j.name || `${j.type}_${String(i + 1).padStart(2, "0")}`;
     if (nombres.has(j.name)) errores.push(`Nombre repetido: ${j.name}`); nombres.add(j.name);
     if (!j.prompt) errores.push(`${j.name}: falta el prompt.`);
-    for (const r of j.refs || []) if (!refsActuales.includes(r) && !(g.references || {})[r]) errores.push(`${j.name}: falta la referencia «${r}».`);
+    for (const r of [...(j.refs || []), ...(j.start_ref ? [j.start_ref] : [])]) if (!refsActuales.includes(r) && !(g.references || {})[r]) errores.push(`${j.name}: falta la referencia «${r}».`);
   });
   return {guion: g, errores};
 }
@@ -252,8 +252,8 @@ function validar() {
   $("errores").textContent = errores.join("\n");
   if (guion && guion.project && !$("proyecto").value) $("proyecto").value = guion.project;
   $("vista").innerHTML = guion && guion.jobs ? `<table><thead><tr><th>Plano</th><th>Tipo</th><th>Referencias</th><th>Prompt</th></tr></thead><tbody>${
-    guion.jobs.map(j => `<tr><td>${esc(j.name)}</td><td>${j.type === "video" ? "vídeo" + (j.start ? ` ← ${esc(j.start)}` : "") : "imagen"}</td>
-      <td>${(j.refs || []).map(r => `<span class="tag ${refsActuales.includes(r) ? "" : "bad"}">${esc(r)}</span>`).join("")}</td>
+    guion.jobs.map(j => `<tr><td>${esc(j.name)}</td><td>${j.type === "video" ? (j.start_ref ? "vídeo hablando" : "vídeo" + (j.start ? ` ← ${esc(j.start)}` : "")) : "imagen"}</td>
+      <td>${[...(j.refs || []), ...(j.start_ref ? [j.start_ref] : [])].map(r => `<span class="tag ${refsActuales.includes(r) ? "" : "bad"}">${esc(r)}</span>`).join("")}</td>
       <td class="p">${esc(j.prompt)}</td></tr>`).join("")}</tbody></table>` : "";
   guardarLocal();
   return {guion, errores};

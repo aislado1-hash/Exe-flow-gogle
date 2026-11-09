@@ -496,7 +496,15 @@ async def _wait_frame_loaded(page, initial_count: int, timeout: int = 20_000) ->
     )
 
 
-async def animate_latest_image(configure_video) -> str:
+async def animate_reference(image_path: str, configure_video) -> str:
+    """Anima una foto de referencia (p. ej. ella hablando a cámara) desde su
+    tarjeta del proyecto: la sube si no está y usa ⋮ → «Animar»."""
+    await upload_reference(image_path)
+    page = await get_page()
+    return await animate_latest_image(configure_video, card=_tile_by_name(page, Path(image_path).name))
+
+
+async def animate_latest_image(configure_video, card=None) -> str:
     """Usa la imagen más reciente del proyecto como fotograma inicial.
 
     1º intenta ⋮ → «Animar». Si no existe, configura vídeo y usa
@@ -506,7 +514,8 @@ async def animate_latest_image(configure_video) -> str:
     """
     from .download import _sel_card, _open_card_menu
     page = await get_page()
-    card = page.locator(_sel_card(is_video=False)).first
+    if card is None:
+        card = page.locator(_sel_card(is_video=False)).first
     await card.wait_for(state="visible", timeout=30_000)
     initial_count = await page.locator(SEL_SLOT_LOADED).count()
 
