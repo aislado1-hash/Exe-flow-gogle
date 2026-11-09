@@ -278,10 +278,6 @@ async def cmd_batch(args) -> int:
     await flow.startup()
     try:
         await flow.create_project()
-        # Subir una sola vez todas las referencias que usan los trabajos.
-        used = {r for job in jobs for r in (job.get("refs") or defaults.get("refs") or [])}
-        for key in sorted(used):
-            await flow.upload_reference(references.get(key, key))
         for i, job in enumerate(jobs, 1):
             jtype = job.get("type", "image")
             name = job.get("name") or f"{jtype}_{i:02d}"

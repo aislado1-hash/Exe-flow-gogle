@@ -544,8 +544,8 @@ _UPLOAD_RE = re.compile(
 _ADD_TO_PROMPT_RE = re.compile(
     r"(Añadir a (la )?petición|Agregar a la instrucción|Add to prompt)", re.I)
 _SEL_ADD_FALLBACK = (
-    'button[aria-label*="Añadir" i], button[aria-label*="Agregar" i], '
-    'button[aria-label*="Add" i], button:has(:is(i, mat-icon):text-is("add"))'
+    ':is(flow-prompt-box, [class*="prompt-box"], form:has([contenteditable="true"])) '
+    'button:has(:is(i, mat-icon):text-is("add"))'
 )
 
 
@@ -554,10 +554,12 @@ async def _open_resources_dialog(page):
     upload_btn = page.locator('button, [role="button"]').filter(has_text=_UPLOAD_RE).first
     if await upload_btn.count() > 0 and await upload_btn.is_visible():
         return upload_btn
+    # Esperar a que el cuadro del prompt esté listo.
+    await page.locator('div[contenteditable="true"]').first.wait_for(state="visible", timeout=30_000)
     for sel in (SEL_ADD_INGREDIENT, _SEL_ADD_FALLBACK):
         trigger = page.locator(sel).first
         try:
-            await trigger.wait_for(state="visible", timeout=5_000)
+            await trigger.wait_for(state="visible", timeout=8_000)
         except Exception:
             continue
         await trigger.click()
