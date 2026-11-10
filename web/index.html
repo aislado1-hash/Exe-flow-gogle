@@ -266,7 +266,9 @@ const MODOS = {
   foto_video: "Foto + vídeo", foto: "Solo foto", habla: "Hablando"
 };
 const FIN_VIDEO = " La cámara permanece fija, mismo ángulo.";
-const PLANTILLA_HABLA = "Ella mira a cámara y dice en español, con voz natural y tono cercano: «…». Gestos naturales al hablar, parpadeo normal." + FIN_VIDEO;
+// Sin frase literal: la voz del clip se silencia en el montaje y suena tu narración.
+// Así el filtro de Flow lo rechaza menos.
+const PLANTILLA_HABLA = "Una camionera joven, sentada tranquilamente en la cabina, cuenta una anécdota a cámara con gestos suaves y naturales de las manos y expresión cercana, parpadeo normal." + FIN_VIDEO;
 let planos = [];
 let refHablaDefecto = "mackenzie_habla";
 
@@ -346,7 +348,6 @@ function erroresPlanos() {
     const n = `Plano ${i + 1}`;
     if ((p.modo === "foto" || p.modo === "foto_video") && !p.img.trim()) e.push(`${n}: falta el prompt de la foto.`);
     if (p.modo !== "foto" && !(p.vid || "").trim()) e.push(`${n}: falta el prompt del vídeo.`);
-    if (p.modo === "habla" && (p.vid || "").includes("«…»")) e.push(`${n}: escribe la frase que dice (sustituye «…»).`);
     for (const r of (p.modo === "foto" || p.modo === "foto_video") ? (p.refs || []) : [])
       if (!refsActuales.includes(r)) e.push(`${n}: falta la referencia «${r}».`);
     if (p.modo === "habla" && !refsActuales.includes(p.refHabla || refHablaDefecto))
@@ -382,7 +383,7 @@ function pintarPlanos() {
         <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>` : ""}
       ${p.modo === "habla" ? `<span class="lbl">Foto de ella hablando</span>
         <select data-i="${i}" data-k="refHabla">${[...new Set([refHablaDefecto, ...refsActuales])].map(r => `<option ${(p.refHabla || refHablaDefecto) === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>` : ""}
-      ${conVid ? `<span class="lbl">${p.modo === "habla" ? "Lo que dice (cambia el texto entre « »)" : "Prompt de la animación"}</span>
+      ${conVid ? `<span class="lbl">${p.modo === "habla" ? "Cómo habla (la frase va en «Narración»; suena tu audio)" : "Prompt de la animación"}</span>
         <textarea data-i="${i}" data-k="vid">${esc(p.vid)}</textarea>` : ""}
       <div class="extra">
         ${conVid ? `<div><span class="lbl">Duración</span><select data-i="${i}" data-k="dur">
