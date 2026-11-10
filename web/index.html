@@ -32,7 +32,7 @@
   .ref img { width: 100%; height: 90px; object-fit: cover; display: block; }
   .ref .ph { flex: 1; display: grid; place-items: center; color: var(--muted); font-size: 26px; }
   .ref .nm { padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
-  .ref .x { color: var(--muted); cursor: pointer; padding: 0 4px; }
+  .ref .x { color: var(--muted); cursor: pointer; padding: 0 4px; background: none; border: 0; font-size: 13px; }
   .ref .x:hover { color: var(--err); }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
   input[type=text], select, textarea { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
@@ -45,6 +45,7 @@
   button.primary { background: var(--accent); color: #1a1405; border-color: var(--accent); font-weight: 600; }
   button.primary:disabled { opacity: .45; cursor: not-allowed; }
   button.danger { color: var(--err); }
+  .cuenta { display: flex; align-items: center; justify-content: space-between; }
   .cuentas label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; cursor: pointer; }
   .cuentas input { accent-color: var(--accent); width: 16px; height: 16px; }
   .muted { color: var(--muted); font-size: 12.5px; }
@@ -91,6 +92,23 @@
   .timeline div { display: grid; place-items: center; font-size: 11px; color: #111; border-right: 1px solid var(--bg); overflow: hidden; white-space: nowrap; cursor: pointer; }
   .tl-foto { background: #8a8f98; } .tl-foto_video { background: var(--run); }
   #jsonBox textarea { margin-top: 8px; }
+  .galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .foto { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .foto .img { aspect-ratio: 16 / 9; background: #0a0b0c; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+  .foto .img img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+  .foto .pie { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .foto .pie .l1 { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .foto .err { color: var(--err); font-size: 12px; }
+  .stage { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; margin: 12px 0 8px; }
+  .stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; will-change: transform, opacity; }
+  .stage-cap { position: absolute; left: 0; right: 0; bottom: 6%; text-align: center; padding: 0 8%; font-size: clamp(13px, 2vw, 20px);
+               font-weight: 600; color: #fff; text-shadow: 0 2px 6px #000, 0 0 2px #000; pointer-events: none; }
+  audio, video { width: 100%; display: block; }
+  video { border-radius: 10px; background: #000; margin-top: 12px; }
+  a.btnlink { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; text-decoration: none; }
+  a.btnlink:hover { border-color: #444a52; }
+  .lightbox { position: fixed; inset: 0; background: #000d; display: none; place-items: center; z-index: 20; cursor: zoom-out; }
+  .lightbox img { max-width: 94vw; max-height: 90vh; border-radius: 8px; }
   details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
 </style>
 </head>
@@ -163,15 +181,54 @@
       </div>
     </section>
 
+    <section>
+      <div class="head"><h2>Proyecto</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="proyectos" style="width:auto;min-width:220px"></select>
+          <button id="abrir">Abrir</button>
+        </div>
+      </div>
+      <p class="muted" id="proyectoInfo">Abre un proyecto anterior o pulsa Empezar en el guion para crear uno.</p>
+    </section>
+
     <section id="progreso" hidden>
-      <div class="head"><h2>Progreso</h2><span class="muted" id="progresoInfo"></span></div>
+      <div class="head"><h2>Imágenes</h2><span class="muted" id="progresoInfo"></span></div>
       <div class="links" id="links"></div>
-      <table><thead><tr><th>Plano</th><th>Cuenta</th><th>Estado</th><th></th></tr></thead><tbody id="filas"></tbody></table>
+      <div class="galeria" id="filas"></div>
       <details><summary>Ver registro</summary><pre class="log" id="log"></pre></details>
+    </section>
+
+    <section id="montaje" hidden>
+      <div class="head"><h2>Narración, vista previa y render</h2><span class="muted" id="montajeInfo"></span></div>
+      <div class="row" style="margin-top:0">
+        <button id="subirAudio">Subir narración…</button>
+        <span class="muted" id="audioNombre">Sin narración</span>
+        <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,audio/*" hidden>
+      </div>
+      <div class="row">
+        <button id="calcTiempos">Calcular tiempos</button>
+        <span class="muted">Transcribe tu voz y coloca cada imagen en su frase (la primera vez tarda más).</span>
+      </div>
+      <div id="previa" hidden>
+        <div class="stage" id="stage"><img id="layA" alt=""><img id="layB" alt=""><div class="stage-cap" id="stageCap"></div></div>
+        <audio id="audio" controls preload="auto"></audio>
+        <div class="muted" id="stagePlano"></div>
+      </div>
+      <div class="row">
+        <select id="transicion" style="width:auto"><option value="fundido">Fundido corto (0,25 s)</option><option value="corte">Corte seco</option></select>
+        <button class="primary" id="render">Render</button>
+        <button class="danger" id="renderStop" hidden>Parar render</button>
+      </div>
+      <pre class="log" id="renderLog" hidden></pre>
+      <div id="resultado" hidden>
+        <video id="video" controls preload="metadata"></video>
+        <div class="row"><a id="dlVideo" class="btnlink" download>Descargar montaje.mp4</a><a id="dlSrt" class="btnlink" download>Descargar montaje.srt</a></div>
+      </div>
     </section>
   </div>
 </main>
 <div class="toast" id="toast"></div>
+<div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -207,20 +264,21 @@ function cargarLocal() {
 async function cargarRefs() {
   const {refs} = await api("/api/refs");
   refsActuales = refs.map(r => r.name);
-  const fijos = ["mackenzie", "cabina", "camion"];
-  const todos = [...fijos, ...refs.map(r => r.name).filter(n => !fijos.includes(n))];
-  $("refs").innerHTML = todos.map(n => {
-    const r = refs.find(x => x.name === n);
-    return `<div class="ref ${r ? "has" : ""}" data-n="${esc(n)}">
-      ${r ? `<img src="${esc(r.url)}?t=${Date.now()}" alt="">` : `<div class="ph">+</div>`}
-      <div class="nm"><span>${esc(n)}</span>${r ? `<span class="x" data-del="${esc(n)}" title="Quitar">✕</span>` : ""}</div></div>`;
-  }).join("");
+  $("refs").innerHTML = refs.map(r => `<div class="ref has" data-n="${esc(r.name)}" title="Clic para cambiar la foto">
+      <img src="${esc(r.url)}" alt="">
+      <div class="nm"><span>${esc(r.name)}</span><button class="x" data-del="${esc(r.name)}" title="Borrar referencia">🗑</button></div></div>`).join("")
+    + `<div class="ref" data-nueva="1" title="Añadir referencia"><div class="ph">+</div><div class="nm"><span class="muted">nueva</span></div></div>`;
   pintarPlanos(); validar();
 }
 $("refs").addEventListener("click", async (e) => {
   const del = e.target.closest("[data-del]");
-  if (del) { e.stopPropagation(); await api("/api/ref/borrar", {name: del.dataset.del}); return cargarRefs(); }
+  if (del) {
+    e.stopPropagation();
+    if (!confirm(`¿Borrar la referencia «${del.dataset.del}»? Se elimina su foto de la carpeta refs.`)) return;
+    await api("/api/ref/borrar", {name: del.dataset.del}); toast(`Referencia «${del.dataset.del}» borrada.`); return cargarRefs();
+  }
   const card = e.target.closest(".ref"); if (!card) return;
+  if (card.dataset.nueva) { $("refNombre").focus(); return toast("Escribe el nombre de la referencia y pulsa Añadir."); }
   refDestino = card.dataset.n; $("refFile").click();
 });
 $("refAdd").onclick = () => {
@@ -241,7 +299,8 @@ async function cargarCuentas() {
   const prev = new Set([...document.querySelectorAll("#cuentas input:checked")].map(i => i.value));
   const {cuentas} = await api("/api/cuentas");
   $("cuentas").innerHTML = cuentas.length
-    ? cuentas.map(c => `<label><input type="checkbox" value="${esc(c)}" ${prev.size === 0 || prev.has(c) ? "checked" : ""}> ${esc(c)}</label>`).join("")
+    ? cuentas.map(c => `<div class="cuenta"><label><input type="checkbox" value="${esc(c)}" ${prev.size === 0 || prev.has(c) ? "checked" : ""}> ${esc(c)}</label>
+        <button class="mini danger" data-borrar-cuenta="${esc(c)}" title="Borrar cuenta">🗑</button></div>`).join("")
     : `<p class="muted">Aún no hay cuentas. Añade una abajo.</p>`;
 }
 $("cuentaAdd").onclick = async () => {
@@ -250,6 +309,14 @@ $("cuentaAdd").onclick = async () => {
   toast(`Se abre Chrome para «${c}». Inicia sesión y luego pulsa actualizar.`, 6000);
 };
 $("cuentasReload").onclick = (e) => { e.preventDefault(); cargarCuentas(); };
+$("cuentas").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-borrar-cuenta]"); if (!b) return;
+  e.preventDefault();
+  const c = b.dataset.borrarCuenta;
+  if (!confirm(`¿Borrar la cuenta «${c}»? Se borra su sesión guardada en este PC (tu cuenta de Google no se toca). Para volver a usarla tendrás que iniciar sesión otra vez.`)) return;
+  try { await api("/api/cuenta/borrar", {cuenta: c}); toast(`Cuenta «${c}» borrada.`); } catch (err) { toast(err.message, 6000); }
+  cargarCuentas();
+});
 
 /* ---------- Guion: editor de planos (solo fotos) ---------- */
 // Cada plano es una foto que se genera en Flow con sus referencias. En el render
@@ -269,13 +336,25 @@ function planosDesdeJobs(jobs) {
   return imgs.map(j => {
     // si un JSON antiguo traía el texto en el vídeo, se recupera
     const v = jobs.find(x => x.type === "video" && x.start && x.start.replace(/\.\w+$/, "") === j.name);
-    return {refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || ""};
+    return {name: j.name, refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || ""};
   });
 }
 
+function asegurarNombres() {
+  // Cada plano conserva su nombre (así «Rehacer» y el render encuentran su imagen
+  // aunque muevas planos). Los nuevos reciben el siguiente número libre.
+  const usados = new Set();
+  for (const p of planos) { if (p.name && !usados.has(p.name)) usados.add(p.name); else p.name = ""; }
+  let n = 1;
+  for (const p of planos) if (!p.name) {
+    while (usados.has(`plano${String(n).padStart(2, "0")}`)) n++;
+    p.name = `plano${String(n).padStart(2, "0")}`; usados.add(p.name);
+  }
+}
 function jobsDesdePlanos() {
+  asegurarNombres();
   return planos.map((p, i) => {
-    const job = {type: "image", name: `plano${String(i + 1).padStart(2, "0")}`, refs: p.refs || [], prompt: p.img};
+    const job = {type: "image", name: p.name, refs: p.refs || [], prompt: p.img};
     if (p.texto) job.texto = p.texto;
     if (p.efecto) job.efecto = p.efecto;
     return job;
@@ -318,7 +397,7 @@ function pintarPlanos() {
     const refsFoto = [...new Set([...refsActuales, ...(p.refs || [])])];
     return `<div class="plano foto_video" id="pl${i}">
       <div class="top">
-        <span class="num">Plano ${i + 1}</span>
+        <span class="num">Plano ${i + 1}</span><span class="muted">${esc(p.name || "")}</span>
         <span class="tiempo">~${fmt(ini)} – ${fmt(t)}</span>
         <button class="mini" data-mv="${i}" data-d="-1" title="Subir">↑</button>
         <button class="mini" data-mv="${i}" data-d="1" title="Bajar">↓</button>
@@ -373,7 +452,7 @@ $("planos").addEventListener("click", (e) => {
   const mv = e.target.closest("[data-mv]");
   if (mv) { const i = +mv.dataset.mv, j = i + +mv.dataset.d; if (j < 0 || j >= planos.length) return; [planos[i], planos[j]] = [planos[j], planos[i]]; return refrescar(); }
   const dup = e.target.closest("[data-dup]");
-  if (dup) { const i = +dup.dataset.dup; planos.splice(i + 1, 0, JSON.parse(JSON.stringify(planos[i]))); return refrescar(); }
+  if (dup) { const i = +dup.dataset.dup; const c = JSON.parse(JSON.stringify(planos[i])); c.name = ""; planos.splice(i + 1, 0, c); return refrescar(); }
   const del = e.target.closest("[data-del-pl]");
   if (del) { if (confirm("¿Borrar este plano?")) { planos.splice(+del.dataset.delPl, 1); refrescar(); } }
 });
@@ -413,47 +492,188 @@ $("ejemplo").onclick = () => {
 $("empezar").onclick = async () => {
   const {guion, errores} = validar();
   if (!guion || errores.length) return toast("Revisa el guion antes de empezar.");
-  const cuentas = [...document.querySelectorAll("#cuentas input:checked")].map(i => i.value);
+  const cuentas = cuentasMarcadas();
   if (!cuentas.length) return toast("Elige al menos una cuenta.");
   guion.project = $("proyecto").value.trim() || guion.project;
   guion.defaults = {...(guion.defaults || {}), ratio: $("ratio").value, image_model: $("imgModel").value.trim()};
-  try { await api("/api/start", {guion, cuentas}); toast("En marcha. Se abrirá una ventana de Chrome por cuenta."); poll(); }
+  try { await api("/api/start", {guion, cuentas}); toast("En marcha. Se abrirá una ventana de Chrome por cuenta."); cargarProyectos(guion.project); poll(); }
   catch (e) { toast(e.message, 6000); }
 };
 $("parar").onclick = async () => { if (confirm("¿Parar el trabajo? Lo que esté generándose en Flow seguirá allí.")) await api("/api/stop", {}); };
 
+let ultimoEstado = null;
 async function poll() {
   clearTimeout(pollTimer);
   let s; try { s = await api("/api/estado"); } catch { pollTimer = setTimeout(poll, 3000); return; }
+  ultimoEstado = s;
   pintarEstado(s);
-  if (s.running) pollTimer = setTimeout(poll, 2000);
+  pintarMontaje(s);
+  if (s.running || (s.render && s.render.running)) pollTimer = setTimeout(poll, 2000);
 }
+function cuentasMarcadas() { return [...document.querySelectorAll("#cuentas input:checked")].map(i => i.value); }
+
 function pintarEstado(s) {
   const b = $("estado");
   if (s.running) { b.className = "badge run"; b.textContent = "generando…"; }
+  else if (s.render && s.render.running) { b.className = "badge run"; b.textContent = s.render.mode === "render" ? "renderizando…" : "calculando tiempos…"; }
   else if (s.finished) {
     const ok = s.planos.every(p => p.estado === "hecho");
-    b.className = "badge " + (ok ? "ok" : "err"); b.textContent = ok ? "terminado" : "terminado con errores";
-  } else { b.className = "badge"; b.textContent = "listo"; }
+    b.className = "badge " + (ok ? "ok" : "err"); b.textContent = ok ? "imágenes listas" : "terminado con errores";
+  } else { b.className = "badge"; b.textContent = s.project ? "listo" : "sin proyecto"; }
   $("empezar").disabled = s.running; $("parar").hidden = !s.running;
-  if (!s.project) return;
-  $("progreso").hidden = false;
+  if (!s.project) { $("progreso").hidden = true; $("montaje").hidden = true; return; }
+  $("proyectoInfo").textContent = `Abierto: ${s.project}`;
+  $("progreso").hidden = false; $("montaje").hidden = false;
   const hechos = s.planos.filter(p => p.estado === "hecho").length;
-  $("progresoInfo").textContent = `${s.project} · ${hechos}/${s.planos.length} hechos`;
+  $("progresoInfo").textContent = `${hechos}/${s.planos.length} imágenes`;
   $("links").innerHTML = Object.entries(s.links).map(([c, u]) => `<p>Proyecto de <b>${esc(c)}</b> en Flow: <a href="${esc(u)}" target="_blank" rel="noopener">abrir</a></p>`).join("");
-  $("filas").innerHTML = s.planos.map(p => `<tr>
-    <td>${esc(p.name)}<div class="muted">${p.type === "video" ? "vídeo" : "imagen"}</div></td>
-    <td>${esc(p.cuenta)}</td>
-    <td><span class="chip ${p.estado.replace(" ", "-")}">${esc(p.estado)}</span>
-        ${p.estado === "error" ? `<div class="muted" style="color:var(--err)">${esc(p.detalle)}</div>` : ""}</td>
-    <td>${p.thumb ? `<a href="${esc(p.thumb)}" target="_blank"><img class="thumb" src="${esc(p.thumb)}" alt=""></a>` : ""}</td></tr>`).join("");
+  $("filas").innerHTML = s.planos.map(p => `<div class="foto">
+      <div class="img">${p.thumb ? `<img src="${esc(p.thumb)}" data-zoom="${esc(p.thumb)}" alt="" loading="lazy">` : (p.estado === "generando" ? "generando…" : "sin imagen")}</div>
+      <div class="pie">
+        <div class="l1"><b>${esc(p.name)}</b><span class="chip ${p.estado.replace(" ", "-")}">${esc(p.estado)}</span></div>
+        ${p.estado === "error" ? `<div class="err">${esc(p.detalle)}</div>` : ""}
+        <div class="l1"><span class="muted">${esc(p.cuenta || "")}</span>
+          <button class="mini" data-rehacer="${esc(p.name)}" ${s.running ? "disabled" : ""} title="Regenerar solo esta imagen">↻ Rehacer</button></div>
+      </div></div>`).join("");
   const log = $("log"); const abajo = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
   log.textContent = s.log.join("\n"); if (abajo) log.scrollTop = log.scrollHeight;
 }
 
+$("filas").addEventListener("click", async (e) => {
+  const z = e.target.closest("[data-zoom]");
+  if (z) { $("lightboxImg").src = z.dataset.zoom; $("lightbox").style.display = "grid"; return; }
+  const r = e.target.closest("[data-rehacer]"); if (!r) return;
+  const name = r.dataset.rehacer;
+  // Si el editor tiene este plano (mismo proyecto), se usa su prompt actual.
+  const mismo = ultimoEstado && ultimoEstado.project === ($("proyecto").value.trim() || ultimoEstado.project);
+  const p = mismo ? planos.find(x => x.name === name) : null;
+  const job = p ? {prompt: p.img, refs: p.refs || [], texto: p.texto || "", ...(p.efecto ? {efecto: p.efecto} : {})} : null;
+  if (!confirm(`¿Rehacer ${name}?${job ? " Se usará el prompt que tiene ahora en el editor." : ""} Las demás imágenes no se tocan.`)) return;
+  try { await api("/api/rehacer", {name, job, cuentas: cuentasMarcadas()}); toast(`Rehaciendo ${name}…`); poll(); }
+  catch (err) { toast(err.message, 6000); }
+});
+$("lightbox").onclick = () => { $("lightbox").style.display = "none"; };
+
+/* ---------- Proyectos ---------- */
+async function cargarProyectos(seleccion) {
+  const {proyectos} = await api("/api/proyectos");
+  $("proyectos").innerHTML = proyectos.length
+    ? proyectos.map(n => `<option ${n === seleccion ? "selected" : ""}>${esc(n)}</option>`).join("")
+    : `<option value="">(no hay proyectos)</option>`;
+}
+$("abrir").onclick = async () => {
+  const project = $("proyectos").value; if (!project) return;
+  try {
+    await api("/api/abrir", {project});
+    // Cargar su guion en el editor
+    const r = await fetch(`/outputs/${encodeURIComponent(project)}/guion.json?t=${Date.now()}`);
+    if (r.ok) {
+      const g = await r.json(); delete g.references;
+      $("json").value = JSON.stringify(g, null, 2); $("proyecto").value = project;
+      importarTexto(); refrescar();
+    }
+    toast(`Proyecto «${project}» abierto.`); parar(); poll();
+  } catch (e) { toast(e.message, 6000); }
+};
+
+/* ---------- Narración ---------- */
+$("subirAudio").onclick = () => $("audioFile").click();
+$("audioFile").onchange = async () => {
+  const f = $("audioFile").files[0]; $("audioFile").value = ""; if (!f) return;
+  if (f.size > 60 * 1024 * 1024) return toast("El audio es muy grande (máx. 60 MB).");
+  toast("Subiendo narración…");
+  const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.readAsDataURL(f); });
+  try { await api("/api/narracion", {filename: f.name, data}); toast("Narración guardada. Pulsa «Calcular tiempos» para la vista previa."); parar(); poll(); }
+  catch (e) { toast(e.message, 6000); }
+};
+$("calcTiempos").onclick = async () => {
+  try { await api("/api/tiempos", {transicion: $("transicion").value}); poll(); } catch (e) { toast(e.message, 6000); }
+};
+$("render").onclick = async () => {
+  try { await api("/api/render", {transicion: $("transicion").value}); toast("Renderizando…"); poll(); } catch (e) { toast(e.message, 6000); }
+};
+$("renderStop").onclick = async () => { await api("/api/render/stop", {}); poll(); };
+
+/* ---------- Vista previa: imita el render (mismos efectos y fundido) ---------- */
+let previa = null;   // {planos, fundido, audioUrl}
+const ZOOM = 0.10;
+function motionCss(efecto, t) {
+  const e = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(Math.max(t, 0), 1));
+  const m = ZOOM / 2 * 100;      // desplazamiento máx. en % con zoom 1,1
+  switch (efecto) {
+    case "zoom_out":  return `scale(${1 + ZOOM - ZOOM * e})`;
+    case "paneo_der": return `translateX(${m - 2 * m * e}%) scale(${1 + ZOOM})`;
+    case "paneo_izq": return `translateX(${-m + 2 * m * e}%) scale(${1 + ZOOM})`;
+    case "subir":     return `translateY(${-m + 2 * m * e}%) scale(${1 + ZOOM})`;
+    case "bajar":     return `translateY(${m - 2 * m * e}%) scale(${1 + ZOOM})`;
+    default:          return `scale(${1 + ZOOM * e})`;
+  }
+}
+function pintarFrame() {
+  if (!previa) return;
+  const t = $("audio").currentTime, P = previa.planos, F = previa.fundido;
+  let i = P.findIndex((p, k) => t < p.t1 || k === P.length - 1); if (i < 0) i = 0;
+  const cur = P[i], prev = i > 0 ? P[i - 1] : null;
+  const dur = (p, k) => Math.max(p.t1 - p.t0, 0.3) + (k < P.length - 1 ? F : 0);
+  const A = $("layA"), B = $("layB");
+  // Durante el fundido: la anterior (A) debajo, la actual (B) entrando.
+  if (prev && F > 0 && t < cur.t0 + F) {
+    if (A.dataset.src !== prev.url) { A.src = prev.url || ""; A.dataset.src = prev.url; }
+    A.style.transform = motionCss(prev.efecto, (t - prev.t0) / dur(prev, i - 1)); A.style.opacity = 1;
+    if (B.dataset.src !== cur.url) { B.src = cur.url || ""; B.dataset.src = cur.url; }
+    B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = Math.max(0, (t - cur.t0) / F);
+  } else {
+    if (B.dataset.src !== cur.url) { B.src = cur.url || ""; B.dataset.src = cur.url; }
+    B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = 1;
+    A.style.opacity = 0;
+  }
+  $("stageCap").textContent = cur.texto || "";
+  $("stagePlano").textContent = `${cur.name} · ${cur.t0.toFixed(1)}–${cur.t1.toFixed(1)} s · ${cur.efecto}${cur.url ? "" : " · FALTA la imagen"}`;
+}
+(function bucle() { if (previa && !$("audio").paused) pintarFrame(); requestAnimationFrame(bucle); })();
+$("audio").addEventListener("seeked", pintarFrame);
+$("audio").addEventListener("loadedmetadata", pintarFrame);
+
+function pintarMontaje(s) {
+  const m = s.media || {}, r = s.render || {};
+  $("audioNombre").textContent = m.narracion ? m.narracion.name : "Sin narración";
+  const busy = r.running || s.running;
+  $("calcTiempos").disabled = !m.narracion || busy;
+  $("render").disabled = !m.narracion || busy;
+  $("renderStop").hidden = !r.running;
+  // log del render/tiempos
+  const log = $("renderLog");
+  log.hidden = !(r.running || (r.exit_code && r.exit_code !== 0)) || r.project !== s.project;
+  if (!log.hidden) { log.textContent = (r.log || []).join("\n"); log.scrollTop = log.scrollHeight; }
+  if (r.running) $("montajeInfo").textContent = r.mode === "render" ? "renderizando…" : "calculando tiempos…";
+  else if (r.exit_code && r.project === s.project) $("montajeInfo").textContent = "falló: mira el registro";
+  else $("montajeInfo").textContent = m.tiempos ? `${m.tiempos.planos.length} imágenes · ${m.tiempos.duracion.toFixed(1)} s` : "";
+  // vista previa
+  if (m.tiempos && m.narracion) {
+    const firma = JSON.stringify([m.narracion.url, m.tiempos.planos.map(p => [p.name, p.t0, p.url, p.efecto])]);
+    if (!previa || previa.firma !== firma) {
+      previa = {firma, planos: m.tiempos.planos, fundido: m.tiempos.fundido || 0};
+      if (!$("audio").src.endsWith(m.narracion.url)) $("audio").src = m.narracion.url;
+      $("layA").dataset.src = ""; $("layB").dataset.src = "";
+      pintarFrame();
+    }
+    $("previa").hidden = false;
+  } else {
+    $("previa").hidden = true; previa = null;
+    if (m.narracion && !$("audio").src.endsWith(m.narracion.url)) $("audio").src = m.narracion.url;
+  }
+  // resultado
+  if (m.video) {
+    $("resultado").hidden = false;
+    if (!$("video").src.endsWith(m.video)) $("video").src = m.video;
+    $("dlVideo").href = m.video; $("dlSrt").href = m.srt || "#"; $("dlSrt").hidden = !m.srt;
+  } else $("resultado").hidden = true;
+}
+function parar() { try { $("audio").pause(); } catch {} }
+
 cargarLocal();
 importarTexto();
-cargarRefs().then(() => { pintarPlanos(); validar(); }); cargarCuentas(); poll();
+cargarRefs().then(() => { pintarPlanos(); validar(); }); cargarCuentas(); cargarProyectos(); poll();
 </script>
 </body>
 </html>

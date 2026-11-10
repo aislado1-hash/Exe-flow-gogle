@@ -141,6 +141,23 @@ def transcribe(audio: Path, model_size: str) -> list[dict]:
     return []
 
 
+def cached_transcription(folder: Path, audio: Path, model_size: str) -> list[dict]:
+    """Transcribe una sola vez: si el audio no ha cambiado, reutiliza la anterior."""
+    cache = folder / "montaje_palabras.json"
+    st = audio.stat()
+    key = {"audio": audio.name, "size": st.st_size, "mtime": int(st.st_mtime), "modelo": model_size}
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        if data.get("key") == key and data.get("words"):
+            print(f"  Uso la transcripción guardada ({len(data['words'])} palabras).")
+            return data["words"]
+    except Exception:
+        pass
+    words = transcribe(audio, model_size)
+    cache.write_text(json.dumps({"key": key, "words": words}, ensure_ascii=False), encoding="utf-8")
+    return words
+
+
 def align(pieces: list[dict], words: list[dict], total: float) -> None:
     """Pone pieces[i]['t0'] y ['t1'] según dónde aparece su texto en el audio."""
     tw = [norm(w["w"]) for w in words]
@@ -310,6 +327,8 @@ def main() -> int:
     ap.add_argument("--salida", help="Archivo de salida (por defecto <carpeta>\\montaje.mp4).")
     ap.add_argument("--transicion", choices=["fundido", "corte"], default="fundido",
                     help="fundido (0,25 s, por defecto) o corte seco.")
+    ap.add_argument("--solo-tiempos", action="store_true",
+                    help="Solo calcula cuándo entra cada imagen (montaje_tiempos.json), sin renderizar.")
     args = ap.parse_args()
 
     FFMPEG = ffmpeg_exe()
@@ -342,14 +361,30 @@ def main() -> int:
 
     total = duration(audio)
     con_texto = sum(1 for p in pieces if p.get("texto"))
+    words = []
     if con_texto:
         print("1/3 Transcribiendo la narración…")
-        words = transcribe(audio, args.modelo)
+        words = cached_transcription(folder, audio, args.modelo)
         print("2/3 Colocando cada plano en su frase…")
         align(pieces, words, total)
     else:
         print("1/3 El guion no tiene «texto» en los planos: reparto el audio en proporción.")
         align_without_audio_text(pieces, total)
+
+    fade_s = 0.0 if args.transicion == "corte" else FADE
+    tiempos = {"audio": audio.name, "duracion": total, "fundido": fade_s, "planos": [
+        {"name": p["name"], "t0": round(p["t0"], 3), "t1": round(p["t1"], 3), "efecto": p["efecto"],
+         "texto": p.get("texto", ""),
+         "imagen": p["image_path"].relative_to(folder).as_posix() if p.get("image_path") else None}
+        for p in pieces]}
+    (folder / "montaje_tiempos.json").write_text(json.dumps(tiempos, ensure_ascii=False, indent=2), encoding="utf-8")
+    if words:
+        write_srt(words, folder / "montaje.srt")
+    if args.solo_tiempos:
+        for p in pieces:
+            print(f"   {ts(p['t0'])} – {ts(p['t1'])}  {p['name']:<14} {p['efecto']}")
+        print(f"\nTIEMPOS OK -> {folder / 'montaje_tiempos.json'}")
+        return 0
 
     print("3/3 Montando…")
     fade = 0.0 if args.transicion == "corte" else FADE
@@ -378,8 +413,6 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     (folder / "montaje_planos.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    if con_texto and words:
-        write_srt(words, folder / "montaje.srt")
     print(f"\nOK -> {out_file}")
     print(f"Tiempos de cada plano: {folder / 'montaje_planos.txt'}")
     if con_texto:
