@@ -127,16 +127,10 @@
       <h2>Ajustes</h2>
       <div class="grid2">
         <div><label>Modelo de imagen</label><input type="text" id="imgModel" value="Nano Banana 2.1"></div>
-        <div><label>Modelo de vídeo</label><input type="text" id="vidModel" value="Omni 1.2 Flash"></div>
         <div><label>Formato</label>
           <select id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select></div>
-        <div><label>Duración del vídeo</label>
-          <select id="dur"><option>4s</option><option>5s</option><option>6s</option><option>7s</option><option>8s</option></select></div>
-        <div><label>Resolución</label>
-          <select id="res"><option>360p</option><option>720p</option></select></div>
       </div>
-      <label class="check"><input type="checkbox" id="dlVideos"> Descargar también los vídeos (si no, se quedan en Flow)</label>
-      <p class="muted">Estos ajustes se aplican a todo el guion. Un plano puede llevar los suyos propios en el JSON.</p>
+      <p class="muted">Flow solo genera las imágenes y se descargan. El movimiento, los fundidos y la voz en off se ponen en el render (<code>montaje.py</code>).</p>
     </section>
   </div>
 
@@ -199,15 +193,13 @@ async function api(path, body) {
 function guardarLocal() {
   try { localStorage.setItem("fm_estado", JSON.stringify({
     json: $("json").value, proyecto: $("proyecto").value,
-    imgModel: $("imgModel").value, vidModel: $("vidModel").value, ratio: $("ratio").value,
-    dur: $("dur").value, res: $("res").value, dl: $("dlVideos").checked })); } catch {}
+    imgModel: $("imgModel").value, ratio: $("ratio").value })); } catch {}
 }
 function cargarLocal() {
   try {
     const s = JSON.parse(localStorage.getItem("fm_estado") || "null"); if (!s) return;
     $("json").value = s.json || ""; $("proyecto").value = s.proyecto || "";
-    for (const k of ["imgModel","vidModel","ratio","dur","res"]) if (s[k]) $(k).value = s[k];
-    $("dlVideos").checked = !!s.dl;
+    for (const k of ["imgModel","ratio"]) if (s[k]) $(k).value = s[k];
   } catch {}
 }
 
@@ -259,57 +251,35 @@ $("cuentaAdd").onclick = async () => {
 };
 $("cuentasReload").onclick = (e) => { e.preventDefault(); cargarCuentas(); };
 
-/* ---------- Guion: editor de planos ---------- */
-// Un "plano" es lo que tú decides: foto + vídeo o solo foto.
-const MODOS = {
-  foto_video: "Foto + vídeo", foto: "Solo foto"
-};
-const FIN_VIDEO = " La cámara permanece fija, mismo ángulo.";
+/* ---------- Guion: editor de planos (solo fotos) ---------- */
+// Cada plano es una foto que se genera en Flow con sus referencias. En el render
+// dura lo que dura su frase de la voz en off y lleva movimiento suave.
+const EFECTOS = {"": "Automático", zoom_in: "Acercar", zoom_out: "Alejar",
+                 paneo_der: "Paneo a la derecha", paneo_izq: "Paneo a la izquierda", subir: "Subir", bajar: "Bajar"};
 let planos = [];
 
-function segDe(p) {
-  const d = (x) => parseInt(String(x || "").replace(/\D/g, "")) || 0;
-  if (p.modo === "foto") return d(p.pantalla) || 4;
-  return d(p.dur) || d($("dur").value) || 4;
+function segDe(p) {   // estimación para la línea de tiempo (~2,6 palabras/s)
+  const n = (p.texto || "").trim().split(/\s+/).filter(Boolean).length;
+  return n ? Math.max(2, Math.round(n / 2.6)) : 4;
 }
 function fmt(t) { return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; }
 
 function planosDesdeJobs(jobs) {
-  const out = []; const usados = new Set();
-  jobs.forEach((j, i) => {
-    if (usados.has(i)) return;
-    const t = j.type || "image";
-    if (t === "image") {
-      const k = jobs.findIndex((v, n) => n > i && !usados.has(n) && (v.type === "video") && v.start && v.start.replace(/\.\w+$/, "") === j.name);
-      if (k >= 0) {
-        usados.add(k); const v = jobs[k];
-        out.push({modo: "foto_video", refs: j.refs || [], img: j.prompt || "", vid: v.prompt || "", dur: v.duration || "", model: v.model || "", texto: j.texto || v.texto || ""});
-      } else out.push({modo: "foto", refs: j.refs || [], img: j.prompt || "", pantalla: j.screen_time || "", texto: j.texto || ""});
-    } else {
-      out.push({modo: "foto_video", refs: [], img: "", vid: j.prompt || "", dur: j.duration || "", model: j.model || "", texto: j.texto || ""});
-    }
+  const imgs = jobs.filter(j => (j.type || "image") === "image");
+  return imgs.map(j => {
+    // si un JSON antiguo traía el texto en el vídeo, se recupera
+    const v = jobs.find(x => x.type === "video" && x.start && x.start.replace(/\.\w+$/, "") === j.name);
+    return {refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || ""};
   });
-  return out;
 }
 
 function jobsDesdePlanos() {
-  const jobs = []; let n = 0;
-  for (const p of planos) {
-    n++; const name = `plano${String(n).padStart(2, "0")}`;
-    if (p.modo === "foto" || p.modo === "foto_video") {
-      const img = {type: "image", name, refs: p.refs || [], prompt: p.img};
-      if (p.texto) img.texto = p.texto;
-      if (p.modo === "foto" && p.pantalla) img.screen_time = p.pantalla;
-      jobs.push(img);
-    }
-    if (p.modo === "foto_video") {
-      const v = {type: "video", name: `${name}_anim`, start: name, prompt: p.vid};
-      if (p.dur) v.duration = p.dur;
-      if (p.model) v.model = p.model;
-      jobs.push(v);
-    }
-  }
-  return jobs;
+  return planos.map((p, i) => {
+    const job = {type: "image", name: `plano${String(i + 1).padStart(2, "0")}`, refs: p.refs || [], prompt: p.img};
+    if (p.texto) job.texto = p.texto;
+    if (p.efecto) job.efecto = p.efecto;
+    return job;
+  });
 }
 
 function escribirJson() {
@@ -333,76 +303,69 @@ function erroresPlanos() {
   planos.forEach((p, i) => {
     const n = `Plano ${i + 1}`;
     if (!(p.img || "").trim()) e.push(`${n}: falta el prompt de la foto.`);
-    if (p.modo !== "foto" && !(p.vid || "").trim()) e.push(`${n}: falta el prompt del vídeo.`);
-    for (const r of p.refs || [])
-      if (!refsActuales.includes(r)) e.push(`${n}: falta la referencia «${r}».`);
+    for (const r of p.refs || []) if (!refsActuales.includes(r)) e.push(`${n}: falta la referencia «${r}».`);
   });
+  const sinTexto = planos.filter(p => !(p.texto || "").trim()).length;
+  if (planos.length && sinTexto === planos.length) e.push("Ningún plano tiene narración: el render repartirá el audio a partes iguales.");
   return e;
 }
 
 function pintarPlanos() {
   let t = 0; const tl = [];
-  const otrasRefs = refsActuales;
   $("planos").innerHTML = planos.map((p, i) => {
     const s = segDe(p); const ini = t; t += s;
-    tl.push(`<div class="tl-${p.modo}" style="flex:${s}" data-go="${i}" title="Plano ${i + 1} · ${MODOS[p.modo]} · ${fmt(ini)}–${fmt(t)}">${i + 1}</div>`);
-    const conFoto = true;  // los tres tipos generan su foto en Flow
-    const conVid = p.modo !== "foto";
-    const refsFoto = [...new Set([...otrasRefs, ...(p.refs || [])])];
-    return `<div class="plano ${p.modo}" id="pl${i}">
+    tl.push(`<div class="tl-foto_video" style="flex:${s}" data-go="${i}" title="Plano ${i + 1} · ~${fmt(ini)}–${fmt(t)}">${i + 1}</div>`);
+    const refsFoto = [...new Set([...refsActuales, ...(p.refs || [])])];
+    return `<div class="plano foto_video" id="pl${i}">
       <div class="top">
         <span class="num">Plano ${i + 1}</span>
-        <select data-i="${i}" data-k="modo">${Object.entries(MODOS).map(([k, v]) => `<option value="${k}" ${p.modo === k ? "selected" : ""}>${v}</option>`).join("")}</select>
-        <span class="tiempo">${fmt(ini)} – ${fmt(t)} · ${s} s</span>
+        <span class="tiempo">~${fmt(ini)} – ${fmt(t)}</span>
         <button class="mini" data-mv="${i}" data-d="-1" title="Subir">↑</button>
         <button class="mini" data-mv="${i}" data-d="1" title="Bajar">↓</button>
         <button class="mini" data-dup="${i}" title="Duplicar">⧉</button>
         <button class="mini danger" data-del-pl="${i}" title="Borrar">✕</button>
       </div>
-      <span class="lbl">Narración de este plano (la frase de tu audio que va aquí; para el montaje)</span>
+      <span class="lbl">Voz en off de este plano (la frase de tu audio mientras se ve esta imagen)</span>
       <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto || "")}" placeholder="Vacío = sigue con la frase del plano anterior">
-      ${conFoto ? `<span class="lbl">Referencias de la foto</span>
-        <div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="muted">Sube referencias arriba.</span>`}</div>
-        <span class="lbl">Prompt de la foto</span>
-        <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>` : ""}
-      ${conVid ? `<span class="lbl">Prompt de la animación</span>
-        <textarea data-i="${i}" data-k="vid">${esc(p.vid)}</textarea>` : ""}
+      <span class="lbl">Referencias de la foto</span>
+      <div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="muted">Sube referencias arriba.</span>`}</div>
+      <span class="lbl">Prompt de la foto</span>
+      <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
       <div class="extra">
-        ${conVid ? `<div><span class="lbl">Duración</span><select data-i="${i}" data-k="dur">
-            <option value="">Por defecto (${$("dur").value})</option>
-            ${["4s","5s","6s","7s","8s"].map(d => `<option ${p.dur === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
-          <div><span class="lbl">Modelo de vídeo (opcional)</span><input type="text" data-i="${i}" data-k="model" value="${esc(p.model || "")}" placeholder="el de Ajustes"></div>`
-        : `<div><span class="lbl">Tiempo en pantalla (para la línea de tiempo)</span><select data-i="${i}" data-k="pantalla">
-            ${["4s","5s","6s","7s"].map(d => `<option ${(p.pantalla || "4s") === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>`}
+        <div><span class="lbl">Movimiento en el render</span><select data-i="${i}" data-k="efecto">
+          ${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
       </div>
     </div>`;
   }).join("");
   $("timeline").innerHTML = planos.length ? tl.join("") : "";
-  $("totalInfo").textContent = planos.length ? `${planos.length} planos · ${fmt(t)} en total` : "";
+  $("totalInfo").textContent = planos.length ? `${planos.length} imágenes · ~${fmt(t)} (la duración real la marca tu audio)` : "";
 }
 
 function validar() {
   const errores = erroresPlanos();
   $("errores").textContent = planos.length ? errores.join("\n") : "";
-  return {guion: {project: $("proyecto").value.trim() || undefined, jobs: jobsDesdePlanos()}, errores};
+  const bloquea = errores.filter(x => !x.startsWith("Ningún plano tiene narración"));
+  return {guion: {project: $("proyecto").value.trim() || undefined, jobs: jobsDesdePlanos()}, errores: bloquea};
 }
 function refrescar() { pintarPlanos(); escribirJson(); validar(); }
 
-// Edición dentro de las tarjetas (sin repintar mientras escribes)
 $("planos").addEventListener("input", (e) => {
   const el = e.target; const i = +el.dataset.i; const k = el.dataset.k;
   if (!k || !planos[i] || el.tagName === "SELECT") return;
   planos[i][k] = el.value; escribirJson(); validar();
+  if (k === "texto") pintarTiempos();
 });
+function pintarTiempos() {  // actualiza tiempos sin repintar (para no perder el foco)
+  let t = 0;
+  planos.forEach((p, i) => { const s = segDe(p), ini = t; t += s;
+    const el = document.querySelector(`#pl${i} .tiempo`); if (el) el.textContent = `~${fmt(ini)} – ${fmt(t)}`; });
+  $("timeline").innerHTML = planos.map((p, i) => `<div class="tl-foto_video" style="flex:${segDe(p)}" data-go="${i}">${i + 1}</div>`).join("");
+  $("totalInfo").textContent = `${planos.length} imágenes · ~${fmt(t)} (la duración real la marca tu audio)`;
+}
 $("planos").addEventListener("change", (e) => {
-  const el = e.target; const i = +el.dataset.i; const k = el.dataset.k;
+  const el = e.target; const i = +el.dataset.i;
   if (el.tagName !== "SELECT" || !planos[i]) return;
-  const p = planos[i];
-  if (k === "modo") {
-    const antes = p.modo; p.modo = el.value;
-    if ((p.modo === "foto" || p.modo === "foto_video") && p.img === undefined) { p.img = ""; p.refs = ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)); }
-  } else p[k] = el.value;
-  refrescar();
+  planos[i][el.dataset.k] = el.value; refrescar();
 });
 $("planos").addEventListener("click", (e) => {
   const c = e.target.closest("[data-ref]");
@@ -418,7 +381,7 @@ $("timeline").addEventListener("click", (e) => {
   const d = e.target.closest("[data-go]"); if (d) $("pl" + d.dataset.go).scrollIntoView({behavior: "smooth", block: "center"});
 });
 $("addPlano").onclick = () => {
-  planos.push({modo: "foto_video", refs: ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", vid: "", dur: "", model: ""});
+  planos.push({refs: ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: ""});
   refrescar(); $("pl" + (planos.length - 1)).scrollIntoView({behavior: "smooth", block: "center"});
 };
 $("json").addEventListener("input", () => {
@@ -427,8 +390,7 @@ $("json").addEventListener("input", () => {
   pintarPlanos(); validar(); guardarLocal();
 });
 $("copiarJson").onclick = async () => { try { await navigator.clipboard.writeText($("json").value); toast("JSON copiado."); } catch { toast("No se pudo copiar."); } };
-for (const id of ["proyecto","imgModel","vidModel","ratio","res","dlVideos"]) $(id).addEventListener("change", () => { escribirJson(); });
-$("dur").addEventListener("change", refrescar);
+for (const id of ["proyecto","imgModel","ratio"]) $(id).addEventListener("change", () => { escribirJson(); });
 $("cargar").onclick = () => $("jsonFile").click();
 $("jsonFile").onchange = async () => {
   const f = $("jsonFile").files[0]; $("jsonFile").value = ""; if (!f) return;
@@ -439,9 +401,10 @@ $("jsonFile").onchange = async () => {
 $("ejemplo").onclick = () => {
   $("proyecto").value = "prueba_web";
   planos = [
-    {modo: "foto_video", refs: ["mackenzie", "cabina"], img: "Usa a la mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia. Luz suave de mañana, plano medio lateral, cámara fija, foto realista.",
-     vid: "Ella ajusta el retrovisor y luego mira al frente. Movimiento natural." + FIN_VIDEO + " Ella no habla.", dur: "", model: "", texto: "Son las seis de la mañana y ya estoy en la cabina."},
-    {modo: "foto", refs: ["camion"], img: "El camión de la referencia aparcado en un área de servicio al amanecer. Plano general, cámara fija, foto realista.", pantalla: "5s"}
+    {refs: ["mackenzie", "cabina"], efecto: "", texto: "Son las seis de la mañana y ya estoy en la cabina.",
+     img: "La mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia, estirándose con una taza de café en la mano. Luz suave de amanecer por el parabrisas. Plano medio lateral, cámara fija, foto realista."},
+    {refs: ["camion"], efecto: "", texto: "Fuera todavía está oscuro y el aparcamiento está en silencio.",
+     img: "El camión de la referencia aparcado en un área de servicio al amanecer, cielo azul oscuro con las primeras luces. Plano general, cámara fija, foto realista."}
   ];
   refrescar();
 };
@@ -453,9 +416,7 @@ $("empezar").onclick = async () => {
   const cuentas = [...document.querySelectorAll("#cuentas input:checked")].map(i => i.value);
   if (!cuentas.length) return toast("Elige al menos una cuenta.");
   guion.project = $("proyecto").value.trim() || guion.project;
-  guion.defaults = {...(guion.defaults || {}),
-    ratio: $("ratio").value, image_model: $("imgModel").value.trim(), video_model: $("vidModel").value.trim(),
-    video_duration: $("dur").value, video_resolution: $("res").value, download_videos: $("dlVideos").checked};
+  guion.defaults = {...(guion.defaults || {}), ratio: $("ratio").value, image_model: $("imgModel").value.trim()};
   try { await api("/api/start", {guion, cuentas}); toast("En marcha. Se abrirá una ventana de Chrome por cuenta."); poll(); }
   catch (e) { toast(e.message, 6000); }
 };

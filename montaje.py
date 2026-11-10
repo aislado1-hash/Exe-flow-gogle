@@ -1,26 +1,24 @@
 #!/usr/bin/env python
 """
-montaje.py - Une los clips de un guion con tu narración, sincronizados.
+montaje.py - Render: tus imágenes como fondo de la voz en off.
 
   python montaje.py outputs\\mi_proyecto narracion.mp3
-  python montaje.py outputs\\mi_proyecto narracion.mp3 --res 720 --modelo small
+  python montaje.py outputs\\mi_proyecto narracion.mp3 --transicion corte --res 720
 
 Qué hace:
-  1. Transcribe la narración con Whisper (faster-whisper) y saca en qué
-     segundo empieza cada palabra.
-  2. Busca en esa transcripción el "texto" de cada plano del guion
-     (outputs\\<proyecto>\\guion.json) y le asigna su tramo de audio.
-     Los planos sin "texto" se reparten el tramo del anterior que sí lo tenga.
-  3. Ajusta cada pieza a su tramo:
-       - Foto + vídeo / Hablando: si el tramo es más largo, ralentiza el clip
-         hasta 1,5x y, si aun así no llega, congela el último fotograma; si es
-         más corto, lo recorta. Los clips hablados van SIN sonido.
-       - Solo foto: zoom suave durante el tramo.
-  4. Une todo con tu narración -> outputs\\<proyecto>\\montaje.mp4
-     y deja montaje.srt (subtítulos) y montaje_planos.txt (tiempos).
+  1. Transcribe la voz en off con Whisper y saca en qué segundo empieza cada palabra.
+  2. Busca el "texto" de cada plano del guion (outputs\\<proyecto>\\guion.json)
+     en esa transcripción: cada imagen dura lo que dura su frase. Los planos
+     sin "texto" se reparten el tramo con el anterior que sí lo tenga.
+  3. Cada imagen lleva movimiento suave, variado de forma automática
+     (acercar, alejar, paneo a la derecha, paneo a la izquierda…) y entre
+     imágenes hay un fundido corto y limpio (o corte seco con --transicion corte).
+     Un plano puede forzar su efecto con "efecto": zoom_in, zoom_out,
+     paneo_der, paneo_izq, subir, bajar.
+  4. Une todo con la voz en off -> outputs\\<proyecto>\\montaje.mp4 (16:9)
+     y deja montaje.srt (subtítulos para CapCut) y montaje_planos.txt.
 
-Necesita los vídeos descargados (opción "Descargar también los vídeos" de la
-web): busca <plano>_anim.mp4, habla01.mp4 y <plano>.png dentro de la carpeta.
+Busca cada imagen como <plano>.png (o .jpg/.webp) dentro de la carpeta.
 """
 import argparse
 import difflib
@@ -36,7 +34,7 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-MAX_SLOW = 1.5   # ralentizar como mucho 1,5x
+FADE = 0.25     # fundido entre imágenes (s)
 FPS = 30
 
 
@@ -96,29 +94,19 @@ def ts(t: float, srt: bool = False) -> str:
 # 1. Guion -> lista de piezas
 # ---------------------------------------------------------------------------
 def pieces_from_guion(jobs: list[dict]) -> list[dict]:
-    """Agrupa los trabajos en piezas del montaje (una por plano)."""
-    pieces, used = [], set()
-    for i, j in enumerate(jobs):
-        if i in used:
-            continue
-        t = j.get("type", "image")
-        if t == "image":
-            k = next((n for n in range(i + 1, len(jobs)) if n not in used
-                      and jobs[n].get("type") == "video"
-                      and Path(str(jobs[n].get("start", ""))).stem == j["name"]), None)
-            if k is not None:
-                used.add(k)
-                pieces.append({"kind": "clip", "name": j["name"], "clip": jobs[k]["name"],
-                               "image": j["name"], "texto": j.get("texto") or jobs[k].get("texto", "")})
-            else:
-                pieces.append({"kind": "foto", "name": j["name"], "image": j["name"],
-                               "texto": j.get("texto", "")})
-        elif j.get("start_ref"):
-            pieces.append({"kind": "habla", "name": j["name"], "clip": j["name"],
-                           "texto": j.get("texto", "")})
-        else:
-            pieces.append({"kind": "clip", "name": j["name"], "clip": j["name"],
-                           "texto": j.get("texto", "")})
+    """Una pieza por imagen del guion (los vídeos, si los hay, se ignoran;
+    su "texto" se suma al de su imagen)."""
+    pieces, by_name = [], {}
+    for j in jobs:
+        if j.get("type", "image") == "image":
+            piece = {"name": j["name"], "image": j["name"], "texto": j.get("texto", ""),
+                     "efecto": j.get("efecto")}
+            pieces.append(piece)
+            by_name[j["name"]] = piece
+    for j in jobs:
+        start = Path(str(j.get("start", ""))).stem
+        if j.get("type") == "video" and start in by_name and j.get("texto") and not by_name[start]["texto"]:
+            by_name[start]["texto"] = j["texto"]
     return pieces
 
 
@@ -222,44 +210,90 @@ def align_without_audio_text(pieces: list[dict], total: float) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Render de cada pieza
+# 3. Render de cada imagen con movimiento
 # ---------------------------------------------------------------------------
-def render_piece(p: dict, out: Path, W: int, H: int) -> str:
-    D = max(p["t1"] - p["t0"], 0.2)
-    scale = (f"scale={W}:{H}:force_original_aspect_ratio=decrease:flags=lanczos,"
-             f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
+EFECTOS = ["zoom_in", "paneo_der", "zoom_out", "paneo_izq", "zoom_in", "subir", "zoom_out", "bajar"]
+ZOOM = 0.10   # cuánto se acerca (10 %)
+
+
+def motion(efecto: str, frames: int) -> tuple[str, str, str]:
+    """Expresiones z, x, y de zoompan para cada efecto (on = nº de fotograma)."""
+    t = f"(on/{max(frames - 1, 1)})"
+    ease = f"(0.5-0.5*cos(PI*{t}))"            # suave al empezar y al terminar
+    cx, cy = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+    zmax = f"{1 + ZOOM}"
+    if efecto == "zoom_in":
+        return f"1+{ZOOM}*{ease}", cx, cy
+    if efecto == "zoom_out":
+        return f"{zmax}-{ZOOM}*{ease}", cx, cy
+    if efecto == "paneo_der":
+        return zmax, f"(iw-iw/zoom)*{ease}", cy
+    if efecto == "paneo_izq":
+        return zmax, f"(iw-iw/zoom)*(1-{ease})", cy
+    if efecto == "subir":
+        return zmax, cx, f"(ih-ih/zoom)*(1-{ease})"
+    if efecto == "bajar":
+        return zmax, cx, f"(ih-ih/zoom)*{ease}"
+    return f"1+{ZOOM}*{ease}", cx, cy
+
+
+def render_piece(p: dict, out: Path, W: int, H: int, seconds: float) -> str:
+    frames = max(int(round(seconds * FPS)), 1)
     enc = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
            "-pix_fmt", "yuv420p", "-r", str(FPS)]
-
-    if p.get("clip_path"):
-        C = duration(p["clip_path"])
-        if D <= C:
-            vf = f"{scale},trim=duration={D:.3f},setpts=PTS-STARTPTS"
-            note = f"recortado {C:.1f}->{D:.1f}s"
-        else:
-            factor = min(D / C, MAX_SLOW)
-            hold = D - C * factor
-            vf = f"setpts={factor:.4f}*PTS,{scale}"
-            if hold > 0.02:
-                vf += f",tpad=stop_mode=clone:stop_duration={hold:.3f}"
-            vf += f",trim=duration={D:.3f}"
-            note = f"x{factor:.2f} lento" + (f" + {hold:.1f}s congelado" if hold > 0.02 else "")
-        run(["-i", str(p["clip_path"]), "-vf", vf, *enc, "-t", f"{D:.3f}", str(out)])
-        return note
-
-    if p.get("image_path"):
-        frames = max(int(round(D * FPS)), 1)
-        # Zoom suave del 100% al 108% centrado (sobre una imagen ampliada para evitar temblor).
-        vf = (f"scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase:flags=lanczos,"
-              f"crop={W * 2}:{H * 2},"
-              f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-              f":d={frames}:s={W}x{H}:fps={FPS},setsar=1")
-        run(["-loop", "1", "-i", str(p["image_path"]), "-vf", vf, *enc,
+    if not p.get("image_path"):
+        run(["-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r={FPS}", *enc,
              "-frames:v", str(frames), str(out)])
-        return "foto con zoom" if p["kind"] == "foto" else "FALTA el vídeo: uso la foto con zoom"
+        return "FALTA la imagen: pantalla negra"
+    z, x, y = motion(p["efecto"], frames)
+    # Se amplía antes del zoompan (x3) para que el movimiento no tiemble.
+    vf = (f"scale={W * 3}:{H * 3}:force_original_aspect_ratio=increase:flags=lanczos,"
+          f"crop={W * 3}:{H * 3},"
+          f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={W}x{H}:fps={FPS},setsar=1")
+    run(["-loop", "1", "-i", str(p["image_path"]), "-vf", vf, *enc,
+         "-frames:v", str(frames), str(out)])
+    return p["efecto"]
 
-    run(["-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r={FPS}", *enc, "-t", f"{D:.3f}", str(out)])
-    return "FALTA el archivo: pantalla negra"
+
+def join_parts(parts: list[Path], durs: list[float], fade: float, out: Path) -> None:
+    """Une los tramos. Con fundido, cada tramo (menos el último) dura `fade` de más
+    y se mezcla con el siguiente: la duración total sigue siendo la suma de `durs`."""
+    if fade <= 0 or len(parts) == 1:
+        lst = out.with_suffix(".txt")
+        lst.write_text("".join(f"file '{x.as_posix()}'\n" for x in parts), encoding="utf-8")
+        run(["-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)])
+        return
+    # Por tandas para no abrir cientos de archivos a la vez.
+    CHUNK = 25
+    if len(parts) > CHUNK:
+        groups, gdurs = [], []
+        for k in range(0, len(parts), CHUNK):
+            sub_p, sub_d = parts[k:k + CHUNK], durs[k:k + CHUNK]
+            last_group = k + CHUNK >= len(parts)
+            g = out.with_name(f"{out.stem}_g{k // CHUNK:03d}.mp4")
+            _xfade_chain(sub_p, sub_d, fade, g, tail=not last_group)
+            groups.append(g)
+            gdurs.append(sum(sub_d))
+        _xfade_chain(groups, gdurs, fade, out, tail=False)
+        return
+    _xfade_chain(parts, durs, fade, out, tail=False)
+
+
+def _xfade_chain(parts: list[Path], durs: list[float], fade: float, out: Path, tail: bool) -> None:
+    if len(parts) == 1:
+        shutil.copy(parts[0], out)
+        return
+    inputs, chain, label, offset = [], [], "[0:v]", 0.0
+    for p in parts:
+        inputs += ["-i", str(p)]
+    for k in range(1, len(parts)):
+        offset += durs[k - 1]
+        nxt = f"[v{k}]"
+        chain.append(f"{label}[{k}:v]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}{nxt}")
+        label = nxt
+    run([*inputs, "-filter_complex", ";".join(chain), "-map", label,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+         "-r", str(FPS), str(out)])
 
 
 # ---------------------------------------------------------------------------
@@ -267,13 +301,15 @@ def render_piece(p: dict, out: Path, W: int, H: int) -> str:
 # ---------------------------------------------------------------------------
 def main() -> int:
     global FFMPEG
-    ap = argparse.ArgumentParser(description="Monta los clips de un guion sobre la narración.")
-    ap.add_argument("carpeta", help="Carpeta del proyecto (outputs\\<proyecto>) con guion.json y los clips.")
+    ap = argparse.ArgumentParser(description="Monta las imágenes de un guion sobre la voz en off.")
+    ap.add_argument("carpeta", help="Carpeta del proyecto (outputs\\<proyecto>) con guion.json y las imágenes.")
     ap.add_argument("audio", help="Narración completa (mp3, wav, m4a…).")
     ap.add_argument("--guion", help="Ruta del guion JSON (por defecto <carpeta>\\guion.json).")
     ap.add_argument("--res", type=int, default=1080, choices=[720, 1080], help="Altura del vídeo final.")
     ap.add_argument("--modelo", default="small", help="Modelo de Whisper: base, small, medium…")
     ap.add_argument("--salida", help="Archivo de salida (por defecto <carpeta>\\montaje.mp4).")
+    ap.add_argument("--transicion", choices=["fundido", "corte"], default="fundido",
+                    help="fundido (0,25 s, por defecto) o corte seco.")
     args = ap.parse_args()
 
     FFMPEG = ffmpeg_exe()
@@ -296,13 +332,11 @@ def main() -> int:
         return 1
 
     print(f"MONTAJE: {len(pieces)} planos · audio {audio.name}")
-    for p in pieces:
-        if p.get("clip"):
-            p["clip_path"] = find_media(folder, p["clip"], (".mp4", ".mov", ".webm"))
-        if p.get("image"):
-            p["image_path"] = find_media(folder, p["image"], (".png", ".jpg", ".jpeg", ".webp"))
-        p["natural"] = duration(p["clip_path"]) if p.get("clip_path") else 4.0
-    missing = [p["name"] for p in pieces if not p.get("clip_path") and not p.get("image_path")]
+    for k, p in enumerate(pieces):
+        p["image_path"] = find_media(folder, p["image"], (".png", ".jpg", ".jpeg", ".webp"))
+        p["efecto"] = p.get("efecto") or EFECTOS[k % len(EFECTOS)]
+        p["natural"] = 4.0
+    missing = [p["name"] for p in pieces if not p.get("image_path")]
     if missing:
         print(f"  AVISO: no encuentro archivos de: {', '.join(missing)}")
 
@@ -318,24 +352,25 @@ def main() -> int:
         align_without_audio_text(pieces, total)
 
     print("3/3 Montando…")
+    fade = 0.0 if args.transicion == "corte" else FADE
     tmp = folder / "_montaje_tmp"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir()
     lines = []
     try:
-        parts = []
+        parts, durs = [], []
         for i, p in enumerate(pieces, 1):
+            D = max(p["t1"] - p["t0"], 0.3)
+            extra = fade if (fade and i < len(pieces)) else 0.0
             part = tmp / f"{i:03d}.mp4"
-            note = render_piece(p, part, W, H)
+            note = render_piece(p, part, W, H, D + extra)
             parts.append(part)
-            tag = {"clip": "vídeo", "foto": "foto", "habla": "hablando"}[p["kind"]]
-            line = f"{ts(p['t0'])} – {ts(p['t1'])}  {p['name']:<14} {tag:<9} {note}"
+            durs.append(D)
+            line = f"{ts(p['t0'])} – {ts(p['t1'])}  {p['name']:<14} {D:5.1f}s  {note}"
             print("   " + line)
             lines.append(line)
-        lst = tmp / "lista.txt"
-        lst.write_text("".join(f"file '{x.as_posix()}'\n" for x in parts), encoding="utf-8")
         video_only = tmp / "video.mp4"
-        run(["-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(video_only)])
+        join_parts(parts, durs, fade, video_only)
         run(["-i", str(video_only), "-i", str(audio), "-map", "0:v", "-map", "1:a",
              "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
              "-movflags", "+faststart", str(out_file)])
