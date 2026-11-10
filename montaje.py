@@ -345,6 +345,7 @@ def main() -> int:
                     help="Volumen de la música en dB (por defecto -14).")
     ap.add_argument("--ducking", choices=["no", "suave", "media", "fuerte"], default="media",
                     help="Cuánto baja la música cuando hablas (por defecto media).")
+    ap.add_argument("--sin-srt", action="store_true", help="No crear el archivo de subtítulos .srt.")
     ap.add_argument("--solo-tiempos", action="store_true",
                     help="Solo calcula cuándo entra cada imagen (montaje_tiempos.json), sin renderizar.")
     args = ap.parse_args()
@@ -398,8 +399,10 @@ def main() -> int:
          "imagen": p["image_path"].relative_to(folder).as_posix() if p.get("image_path") else None}
         for p in pieces]}
     (folder / "montaje_tiempos.json").write_text(json.dumps(tiempos, ensure_ascii=False, indent=2), encoding="utf-8")
-    if words:
+    if words and not args.sin_srt:
         write_srt(words, folder / "montaje.srt")
+    elif args.sin_srt:
+        (folder / "montaje.srt").unlink(missing_ok=True)
     if args.solo_tiempos:
         for p in pieces:
             print(f"   {ts(p['t0'])} – {ts(p['t1'])}  {p['name']:<14} {p['efecto']}")
@@ -440,7 +443,7 @@ def main() -> int:
     (folder / "montaje_planos.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\nOK -> {out_file}")
     print(f"Tiempos de cada plano: {folder / 'montaje_planos.txt'}")
-    if con_texto:
+    if con_texto and not args.sin_srt:
         print(f"Subtítulos: {folder / 'montaje.srt'}")
     return 0
 

@@ -41,6 +41,7 @@ AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 SUBPROC_ENV = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
 NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": "fundido",
+               "srt": True, "subtitulos_previa": False,
                "musica_db": -14, "ducking": "media"}
 # Archivos que no se copian al duplicar un proyecto
 NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
@@ -130,17 +131,29 @@ class Job:
             self.project, self.log, self.planos, self.links = project, [], {}, {}
         self.current, self.finished = {}, None
 
-    def start(self, project: str, cuentas: list[str], solo_faltan: bool = False) -> None:
+    def start(self, project: str, cuentas: list[str], solo_faltan: bool = False,
+              solo: list[str] | None = None) -> None:
+        """Un único lote: cada cuenta abre UN navegador y UN proyecto de Flow y
+        genera seguidas todas las imágenes que le tocan (el trabajo se reparte)."""
         if self.running:
             raise RuntimeError(f"Ya se están generando imágenes del proyecto «{self.project}».")
         guion = load_guion(project)
         jobs = [j for j in guion["jobs"] if j.get("type", "image") == "image"]
         if not jobs:
             raise RuntimeError("El guion no tiene planos.")
+        if solo:
+            jobs = [j for j in jobs if j["name"] in set(solo)]
+            if not jobs:
+                raise RuntimeError("No encuentro esos planos en el guion.")
         if solo_faltan:
             jobs = [j for j in jobs if not find_image(_pdir(project), j["name"])]
             if not jobs:
                 raise RuntimeError("No falta ninguna imagen.")
+        accounts = flow_multi.list_accounts()
+        cuentas = [c for c in cuentas if c in accounts]
+        if not cuentas:
+            raise RuntimeError("Ninguna de las cuentas elegidas tiene sesión.")
+        cuentas = cuentas[:len(jobs)]          # no abrir navegadores sin trabajo
         refs = _all_refs()
         missing = sorted({r for j in jobs for r in (j.get("refs") or [])} - set(refs))
         if missing:
@@ -162,44 +175,6 @@ class Job:
                     self.planos[j["name"]] = {"cuenta": cuentas[g_idx % len(cuentas)],
                                               "estado": "pendiente", "detalle": ""}
         self._launch(jobfile, cuentas)
-
-    def rehacer(self, project: str, name: str, job_override: dict | None, cuentas: list[str]) -> None:
-        """Regenera SOLO una imagen; las demás no se tocan."""
-        if self.running:
-            raise RuntimeError(f"Espera: se están generando imágenes de «{self.project}».")
-        pdir = _pdir(project)
-        guion = load_guion(project)
-        job = next((j for j in guion["jobs"] if j.get("name") == name), None)
-        if job is None:
-            raise RuntimeError(f"No encuentro el plano {name} en el guion.")
-        if job_override:
-            for k in ("prompt", "refs", "texto", "efecto"):
-                if k in job_override:
-                    job[k] = job_override[k]
-            _write_json(pdir / "guion.json", guion)
-        refs = _all_refs()
-        missing = sorted(set(job.get("refs") or []) - set(refs))
-        if missing:
-            raise RuntimeError("Faltan referencias: " + ", ".join(missing))
-        accounts = flow_multi.list_accounts()
-        img = find_image(pdir, name)
-        cuenta = img.parent.name if img and img.parent != pdir else ""
-        if cuenta not in accounts:
-            cuenta = next((c for c in cuentas if c in accounts), None) or (accounts[0] if accounts else None)
-        if not cuenta:
-            raise RuntimeError("No hay ninguna cuenta con sesión.")
-        aj = load_ajustes(project)
-        mini = {"project": _safe_name(project), "references": refs,
-                "defaults": {"ratio": aj["ratio"], "image_model": aj["image_model"]},
-                "jobs": [{**job, "count": 1}]}
-        mini_file = pdir / "_rehacer" / f"{_safe_name(name)}.json"
-        mini_file.parent.mkdir(parents=True, exist_ok=True)
-        _write_json(mini_file, mini)
-        with self.lock:
-            self._reset(project)
-            self.log.append(f"===== Rehacer {name} con {cuenta} =====")
-            self.planos[name] = {"cuenta": cuenta, "estado": "pendiente", "detalle": ""}
-        self._launch(mini_file, [cuenta])
 
     def _launch(self, jobfile: Path, cuentas: list[str]) -> None:
         self.proc = subprocess.Popen(
@@ -276,6 +251,8 @@ class Render:
                     "--ducking", aj["ducking"] if aj["ducking"] in ("no", "suave", "media", "fuerte") else "media"]
         if mode == "tiempos":
             cmd.append("--solo-tiempos")
+        if not aj.get("srt", True):
+            cmd.append("--sin-srt")
         with self.lock:
             self.log, self.mode, self.project, self.exit_code = [], mode, _safe_name(project), None
         self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE,
@@ -578,7 +555,12 @@ class Handler(BaseHTTPRequestHandler):
             JOB.start(name, cuentas, bool(data.get("solo_faltan")))
             return self._json({"ok": True})
         if path == "/api/rehacer":
-            JOB.rehacer(name, data.get("plano", ""), data.get("job"), data.get("cuentas") or [])
+            planos = data.get("planos") or ([data["plano"]] if data.get("plano") else [])
+            cuentas = [c for c in data.get("cuentas", []) if c] or flow_multi.list_accounts()
+            JOB.start(name, cuentas, solo=planos)
+            if planos:
+                with JOB.lock:
+                    JOB.log.insert(0, f"===== Rehacer {', '.join(planos)} =====")
             return self._json({"ok": True})
         if path == "/api/parar":
             if JOB.project == _safe_name(name):

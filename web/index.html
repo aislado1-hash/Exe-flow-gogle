@@ -277,7 +277,11 @@
               <button id="genTodas">Regenerar todas</button>
               <button class="danger" id="parar" hidden>Parar</button>
             </div>
-            <p class="faint">Para cambiar una sola imagen usa ↻ Rehacer en su tarjeta (usa el prompt que tenga en el guion).</p>
+            <div class="row" style="margin-top:10px">
+              <button id="rehacerSel" disabled>↻ Rehacer seleccionadas</button>
+              <button class="ghost mini" id="selNinguna" hidden>Quitar selección</button>
+            </div>
+            <p class="faint">Cada cuenta abre <b>un solo navegador</b> y genera seguidas todas las imágenes que le tocan; con varias cuentas el trabajo se reparte entre ellas. Marca ☐ en las imágenes que quieras rehacer y se hacen todas en un mismo lote, con el prompt que tengan en el guion.</p>
             <p class="warn" id="otroGen" hidden></p>
             <div class="nextbar"><button class="primary" data-go="audio">Siguiente: Audio →</button></div>
           </section>
@@ -327,6 +331,7 @@
               <option value="fuerte">Fuerte (−16 dB)</option>
             </select>
             <p class="faint">Se repite si es corta y se funde al principio y al final. En la vista previa ya suena como en el render.</p>
+            <label style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="subPrevia" style="accent-color:var(--accent)"> Mostrar la frase en la vista previa</label>
             <div class="nextbar"><button class="primary" data-go="render">Siguiente: Render →</button></div>
           </section>
         </aside>
@@ -353,12 +358,13 @@
             <h2>Render</h2>
             <label class="lbl">Transición entre imágenes</label>
             <select id="transicion"><option value="fundido">Fundido corto (0,25 s)</option><option value="corte">Corte seco</option></select>
+            <label style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="srt" style="accent-color:var(--accent)"> Crear subtítulos (.srt para CapCut)</label>
             <ul class="faint" id="checklist" style="list-style:none;padding-left:0;margin:12px 0;line-height:1.7"></ul>
             <div class="row">
               <button class="primary" id="render">Render</button>
               <button class="danger" id="renderStop" hidden>Parar</button>
             </div>
-            <p class="faint">1080p, 16:9. El .srt es para poner los subtítulos con tu estilo en CapCut.</p>
+            <p class="faint">1080p, 16:9. El vídeo sale sin subtítulos; si marcas la casilla se crea además el .srt aparte.</p>
           </section>
         </aside>
       </div>
@@ -548,6 +554,7 @@ async function abrirProyecto(name) {
   $("crumbName").textContent = P.name; document.title = `${P.name} · flow-mackenzie`;
   $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;
   $("musDb").value = P.ajustes.musica_db; $("ducking").value = P.ajustes.ducking; $("transicion").value = P.ajustes.transicion;
+  $("srt").checked = P.ajustes.srt !== false; $("subPrevia").checked = !!P.ajustes.subtitulos_previa; seleccion.clear();
   pintarMusDb();
   saveState("Guardado");
   if (!refsActuales.length) await cargarRefs();
@@ -603,9 +610,10 @@ async function guardarYa() {
 window.addEventListener("beforeunload", (e) => { if (savePending) { guardarYa(); e.preventDefault(); e.returnValue = ""; } });
 function leerAjustes() {
   return {image_model: $("imgModel").value.trim(), ratio: $("ratio").value, musica_db: +$("musDb").value,
-          ducking: $("ducking").value, transicion: $("transicion").value};
+          ducking: $("ducking").value, transicion: $("transicion").value,
+          srt: $("srt").checked, subtitulos_previa: $("subPrevia").checked};
 }
-for (const id of ["imgModel", "ratio", "ducking", "transicion"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
+for (const id of ["imgModel", "ratio", "ducking", "transicion", "srt", "subPrevia"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
 $("imgModel").addEventListener("input", () => guardar("ajustes"));
 $("musDb").addEventListener("input", () => { pintarMusDb(); P.ajustes = leerAjustes(); guardar("ajustes"); });
 function pintarMusDb() { $("musDbTxt").textContent = `${$("musDb").value} dB`; }
@@ -749,6 +757,7 @@ async function poll() {
   if (P && P.name === name) pollTimer = setTimeout(poll, (P.estado.gen.running || P.estado.render.running) ? 2000 : 6000);
 }
 let galeriaFirma = "", editorPendiente = false;
+const seleccion = new Set();
 document.addEventListener("focusout", () => setTimeout(() => {
   if (editorPendiente && P && !$("planos").contains(document.activeElement)) { editorPendiente = false; pintarPlanos(); }
 }, 50));
@@ -763,7 +772,7 @@ function pintarEstado(s) {
   const hechas = s.planos.filter(p => p.thumb).length;
   $("imgInfo").textContent = `${hechas}/${s.planos.length} imágenes`;
   $("links").innerHTML = Object.entries(g.links || {}).map(([c, u]) => `<p class="faint">Proyecto de <b>${esc(c)}</b> en Flow: <a href="${esc(u)}" target="_blank" rel="noopener">abrir</a></p>`).join("");
-  const firma = JSON.stringify(s.planos.map(p => [p.name, p.estado, p.thumb, p.cuenta, p.detalle])) + g.running;
+  const firma = JSON.stringify(s.planos.map(p => [p.name, p.estado, p.thumb, p.cuenta, p.detalle])) + g.running + [...seleccion].join();
   if (firma !== galeriaFirma) {
     galeriaFirma = firma;
     $("galeria").innerHTML = s.planos.length ? s.planos.map(p => {
@@ -771,7 +780,7 @@ function pintarEstado(s) {
       return `<div class="foto">
         <div class="img">${p.thumb ? `<img src="${esc(p.thumb)}" data-zoom="${esc(p.thumb)}" alt="" loading="lazy">` : (p.estado === "generando" ? "generando…" : "sin imagen")}</div>
         <div class="pie">
-          <div class="l1"><b>${esc(p.name)}</b><span class="chip ${esc(p.estado.replace(" ", "-"))}">${esc(p.estado)}</span></div>
+          <div class="l1"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-sel="${esc(p.name)}" ${seleccion.has(p.name) ? "checked" : ""} style="accent-color:var(--accent)"><b>${esc(p.name)}</b></label><span class="chip ${esc(p.estado.replace(" ", "-"))}">${esc(p.estado)}</span></div>
           ${pl && pl.texto ? `<div class="txt">${esc(pl.texto)}</div>` : ""}
           ${p.estado === "error" ? `<div class="err">${esc(p.detalle)}</div>` : ""}
           <div class="l1"><span class="faint">${esc(p.cuenta || "")}</span>
@@ -786,6 +795,7 @@ function pintarEstado(s) {
   $("genFaltan").disabled = g.running || !!g.otro || !s.planos.length;
   $("genTodas").disabled = g.running || !!g.otro || !s.planos.length;
   $("parar").hidden = !g.running;
+  pintarSeleccion();
   $("otroGen").hidden = !g.otro; $("otroGen").textContent = g.otro ? `Ahora mismo se están generando imágenes de «${g.otro}». Espera a que termine.` : "";
   // audio y render
   pintarAudio(s);
@@ -821,12 +831,30 @@ $("galeria").addEventListener("click", async (e) => {
   const z = e.target.closest("[data-zoom]");
   if (z) { $("lightboxImg").src = z.dataset.zoom; $("lightbox").style.display = "grid"; return; }
   const r = e.target.closest("[data-rehacer]"); if (!r) return;
-  const plano = r.dataset.rehacer;
-  if (!confirm(`¿Rehacer ${plano}? Se usa el prompt que tiene ahora en el guion. Las demás imágenes no se tocan.`)) return;
-  await guardarYa();
-  try { await api("/api/rehacer", {name: P.name, plano, job: null, cuentas: cuentasMarcadas()}); toast(`Rehaciendo ${plano}…`); poll(); }
-  catch (err) { toast(err.message, 6000); }
+  rehacer([r.dataset.rehacer]);
 });
+$("galeria").addEventListener("change", (e) => {
+  const c = e.target.closest("[data-sel]"); if (!c) return;
+  if (c.checked) seleccion.add(c.dataset.sel); else seleccion.delete(c.dataset.sel);
+  pintarSeleccion();
+});
+function pintarSeleccion() {
+  const n = seleccion.size, g = P && P.estado ? P.estado.gen : {};
+  $("rehacerSel").textContent = n ? `↻ Rehacer seleccionadas (${n})` : "↻ Rehacer seleccionadas";
+  $("rehacerSel").disabled = !n || g.running || !!g.otro;
+  $("selNinguna").hidden = !n;
+}
+$("selNinguna").onclick = () => { seleccion.clear(); galeriaFirma = ""; pintarEstado(P.estado); };
+$("rehacerSel").onclick = () => rehacer([...seleccion]);
+async function rehacer(planos) {
+  if (!planos.length) return;
+  const cuentas = cuentasMarcadas(); if (!cuentas.length) return toast("Elige al menos una cuenta.");
+  const txt = planos.length === 1 ? planos[0] : `${planos.length} imágenes`;
+  if (!confirm(`¿Rehacer ${txt}? Se usa el prompt que tienen ahora en el guion; las demás no se tocan.${cuentas.length > 1 && planos.length > 1 ? `\nSe reparte entre ${Math.min(cuentas.length, planos.length)} cuentas.` : ""}`)) return;
+  await guardarYa();
+  try { await api("/api/rehacer", {name: P.name, planos, cuentas}); toast(`Rehaciendo ${txt} en un solo lote…`); seleccion.clear(); galeriaFirma = ""; poll(); }
+  catch (err) { toast(err.message, 6000); }
+}
 $("lightbox").onclick = () => { $("lightbox").style.display = "none"; };
 
 /* ---------- Audio ---------- */
@@ -914,7 +942,7 @@ function pintarFrame() {
   } else {
     pon(B, cur); B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = 1; A.style.opacity = 0;
   }
-  $("stageCap").textContent = cur.texto || "";
+  $("stageCap").textContent = $("subPrevia").checked ? (cur.texto || "") : "";
   $("stagePlano").textContent = `${cur.name} · ${cur.t0.toFixed(1)}–${cur.t1.toFixed(1)} s · ${EFECTOS[cur.efecto] || cur.efecto}${cur.url ? "" : " · FALTA la imagen"}`;
   const total = previa.dur || v.duration || 0;
   $("tc").textContent = `${fmt(t)} / ${fmt(total)}`;
@@ -946,7 +974,8 @@ $("seek").addEventListener("change", () => { seeking = false; syncMusica(); });
 $("voz").addEventListener("seeked", () => { pintarFrame(); syncMusica(); });
 function pausarPrevia() { try { $("voz").pause(); $("mus").pause(); } catch {} }
 function detenerPrevia() { pausarPrevia(); }
-for (const id of ["musDb", "ducking"]) $(id).addEventListener("input", () => { if (previa) pintarFrame(); });
+for (const id of ["musDb", "ducking", "subPrevia"]) $(id).addEventListener("input", () => { if (previa) pintarFrame(); });
+$("subPrevia").addEventListener("change", () => { if (previa) pintarFrame(); });
 
 /* ---------- Render ---------- */
 function pintarRender(s) {
@@ -956,6 +985,7 @@ function pintarRender(s) {
     [s.planos.length > 0 && hechas === s.planos.length, `Imágenes: ${hechas}/${s.planos.length}`],
     [!!m.narracion, m.narracion ? "Narración subida" : "Falta la narración (paso 3)"],
     [true, m.musica ? `Música: ${m.musica.name} · ${$("musDb").value} dB · ducking ${$("ducking").value}` : "Sin música de fondo (opcional)"],
+    [true, $("srt").checked ? "Se creará el archivo .srt" : "Sin subtítulos"],
   ];
   $("checklist").innerHTML = items.map(([ok, t]) => `<li style="color:${ok ? "var(--muted)" : "var(--accent)"}">${ok ? "✓" : "•"} ${esc(t)}</li>`).join("");
   $("render").disabled = !m.narracion || r.running || !!r.otro || s.gen.running;
@@ -970,7 +1000,7 @@ function pintarRender(s) {
   if (m.video) {
     $("resultado").hidden = false; $("sinVideo").hidden = true;
     if (!$("video").src.endsWith(m.video)) $("video").src = m.video;
-    $("dlVideo").href = m.video; $("dlSrt").href = m.srt || "#"; $("dlSrt").hidden = !m.srt;
+    $("dlVideo").href = m.video; $("dlSrt").href = m.srt || "#"; $("dlSrt").hidden = !m.srt || !$("srt").checked;
   } else { $("resultado").hidden = true; $("sinVideo").hidden = false; }
 }
 $("render").onclick = async () => {
