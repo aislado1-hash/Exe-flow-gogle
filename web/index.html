@@ -6,236 +6,374 @@
 <title>flow-mackenzie</title>
 <style>
   :root {
-    --bg: #0e0f11; --panel: #17191c; --panel2: #1f2226; --line: #2a2e33;
-    --text: #e8e9eb; --muted: #9aa0a6; --accent: #f2b33d; --ok: #4cc38a;
-    --err: #ef5b5b; --run: #5aa9f5;
+    --bg: #0d0e10; --panel: #16181b; --panel2: #1e2125; --panel3: #262a2f; --line: #2a2e33; --line2: #3a3f46;
+    --text: #e9eaec; --muted: #9aa0a6; --faint: #6b7178; --accent: #f2b33d; --accent-ink: #1a1405;
+    --ok: #4cc38a; --err: #ef5b5b; --run: #5aa9f5; --radius: 12px;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px;
-           border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
-  header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
-  header h1 span { color: var(--accent); }
-  .badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--panel2); color: var(--muted); }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  a { color: var(--accent); }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
+
+  /* ---------- barra superior ---------- */
+  header { display: flex; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--line);
+           position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); }
+  .logo { font-weight: 700; font-size: 16px; letter-spacing: .2px; cursor: pointer; white-space: nowrap; }
+  .logo span { color: var(--accent); }
+  .crumb { display: flex; align-items: center; gap: 8px; color: var(--muted); min-width: 0; }
+  .crumb b { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spacer { flex: 1; }
+  .save { font-size: 12.5px; color: var(--faint); white-space: nowrap; }
+  .save.ing { color: var(--run); } .save.err { color: var(--err); }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
   .badge.run { background: #173049; color: var(--run); }
   .badge.ok { background: #13321f; color: var(--ok); }
   .badge.err { background: #3a1717; color: var(--err); }
-  main { display: grid; grid-template-columns: 380px 1fr; gap: 18px; padding: 18px 24px; max-width: 1500px; margin: 0 auto; }
-  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 18px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 12px; }
-  .refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .ref { background: var(--panel2); border: 1px dashed var(--line); border-radius: 10px; overflow: hidden;
-         display: flex; flex-direction: column; cursor: pointer; min-height: 120px; }
-  .ref.has { border-style: solid; }
-  .ref img { width: 100%; height: 90px; object-fit: cover; display: block; }
-  .ref .ph { flex: 1; display: grid; place-items: center; color: var(--muted); font-size: 26px; }
-  .ref .nm { padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
-  .ref .x { color: var(--muted); cursor: pointer; padding: 0 4px; background: none; border: 0; font-size: 13px; }
-  .ref .x:hover { color: var(--err); }
-  .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-  input[type=text], select, textarea { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-         border-radius: 8px; padding: 8px 10px; font: inherit; width: 100%; }
-  textarea { font: 12.5px/1.5 ui-monospace, Consolas, monospace; min-height: 260px; resize: vertical; }
-  input:focus, select:focus, textarea:focus { outline: 2px solid #f2b33d55; border-color: var(--accent); }
-  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
-           padding: 8px 14px; font: inherit; cursor: pointer; white-space: nowrap; }
-  button:hover { border-color: #444a52; }
-  button.primary { background: var(--accent); color: #1a1405; border-color: var(--accent); font-weight: 600; }
-  button.primary:disabled { opacity: .45; cursor: not-allowed; }
-  button.danger { color: var(--err); }
-  .cuenta { display: flex; align-items: center; justify-content: space-between; }
-  .cuentas label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; cursor: pointer; }
-  .cuentas input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+  main { max-width: 1440px; margin: 0 auto; padding: 22px 24px 60px; }
+  .view[hidden] { display: none !important; }
+
+  /* ---------- piezas comunes ---------- */
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 18px; }
+  h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  h3 { font-size: 15px; margin: 0 0 6px; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .head h2 { margin: 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 10px; }
   .muted { color: var(--muted); font-size: 12.5px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .grid2 label, .field label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
-  .check { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-  .check input { accent-color: var(--accent); }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 12px; color: var(--muted); font-weight: 500; }
-  td.p { color: var(--muted); font-size: 12.5px; max-width: 420px; }
-  .chip { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel2); color: var(--muted); }
-  .chip.generando { background: #173049; color: var(--run); }
+  .faint { color: var(--faint); font-size: 12px; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  textarea { resize: vertical; min-height: 64px; font-size: 13px; line-height: 1.45; }
+  textarea.mono { font: 12.5px/1.5 ui-monospace, Consolas, monospace; min-height: 240px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #f2b33d44; border-color: var(--accent); }
+  label.lbl, .lbl { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
+  button { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--line2); background: var(--panel3); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #f5c25e; }
+  button.danger { color: var(--err); }
+  button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  button.ghost:hover:not(:disabled) { color: var(--text); background: var(--panel2); }
+  button.mini { padding: 4px 9px; font-size: 12.5px; }
+  .chip { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel3); color: var(--muted); }
+  .chip.generando, .chip.pendiente-run { background: #173049; color: var(--run); }
   .chip.hecho { background: #13321f; color: var(--ok); }
   .chip.error, .chip.sin-terminar { background: #3a1717; color: var(--err); }
-  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 6px; background: #2a2416; color: var(--accent); margin: 0 4px 3px 0; }
-  .tag.bad { background: #3a1717; color: var(--err); }
-  .thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; display: block; }
-  .errors { color: var(--err); font-size: 12.5px; margin-top: 8px; white-space: pre-line; }
-  pre.log { background: #0a0b0c; border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 320px;
-            overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; color: #c9cdd1; margin: 0; white-space: pre-wrap; }
-  .links a { color: var(--accent); }
-  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-  .head h2 { margin: 0; }
-  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel2); border: 1px solid var(--line);
-           padding: 10px 14px; border-radius: 10px; display: none; max-width: 420px; }
-  .plano { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
-  .plano.foto { border-left: 3px solid #8a8f98; }
-  .plano.foto_video { border-left: 3px solid var(--run); }
-  .plano .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  .plano .num { font-weight: 600; min-width: 64px; }
-  .plano .tiempo { color: var(--muted); font-size: 12px; margin-right: auto; }
-  .plano select { width: auto; padding: 5px 8px; }
-  .plano .mini { padding: 4px 9px; font-size: 12.5px; }
-  .plano textarea { min-height: 62px; font: 13px/1.45 system-ui, sans-serif; margin-top: 4px; }
+  pre.log { background: #0a0b0c; border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 300px; overflow: auto;
+            font: 12px/1.45 ui-monospace, Consolas, monospace; color: #c9cdd1; margin: 10px 0 0; white-space: pre-wrap; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
+  .errors { color: var(--err); font-size: 12.5px; margin-top: 10px; white-space: pre-line; }
+  .warn { color: var(--accent); font-size: 12.5px; }
+  .empty { border: 1px dashed var(--line2); border-radius: var(--radius); padding: 34px 20px; text-align: center; color: var(--muted); }
+
+  /* ---------- inicio ---------- */
+  .home { display: grid; grid-template-columns: 1fr 340px; gap: 18px; align-items: start; }
+  @media (max-width: 1050px) { .home { grid-template-columns: 1fr; } }
+  .nuevo { display: flex; gap: 8px; }
+  .nuevo input { max-width: 320px; }
+  .proyectos { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+  .pcard { background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column;
+           transition: border-color .15s, transform .15s; }
+  .pcard:hover { border-color: var(--line2); transform: translateY(-1px); }
+  .pcard .cover { aspect-ratio: 16 / 9; background: #0a0b0c center/cover no-repeat; cursor: pointer; display: grid; place-items: center; color: var(--faint); font-size: 12px; position: relative; }
+  .pcard .cover .tags { position: absolute; left: 8px; top: 8px; display: flex; gap: 6px; }
+  .pcard .body { padding: 12px 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .pcard .nm { font-weight: 600; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcard .acts { display: flex; gap: 6px; margin-top: 8px; }
+  .pcard .acts .primary { flex: 1; }
+  .refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .ref { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
+  .ref img { width: 100%; height: 72px; object-fit: cover; display: block; }
+  .ref .ph { height: 72px; display: grid; place-items: center; color: var(--muted); font-size: 22px; border-bottom: 1px dashed var(--line2); }
+  .ref .nm { padding: 5px 7px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+  .ref .nm span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .x { background: none; border: 0; padding: 0 2px; color: var(--muted); cursor: pointer; font-size: 13px; }
+  .x:hover { color: var(--err); }
+  .cuenta { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .cuenta:last-child { border-bottom: 0; }
+
+  /* ---------- proyecto: pasos ---------- */
+  .steps { display: flex; gap: 6px; margin: 0 0 18px; flex-wrap: wrap; }
+  .step { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line);
+          background: var(--panel); cursor: pointer; color: var(--muted); }
+  .step .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--panel3); font-size: 12px; font-weight: 700; color: var(--text); }
+  .step .s { font-size: 11.5px; color: var(--faint); }
+  .step.on { border-color: var(--accent); color: var(--text); background: #1f1a10; }
+  .step.on .n { background: var(--accent); color: var(--accent-ink); }
+  .step.done .n { background: #13321f; color: var(--ok); }
+  .pane[hidden] { display: none; }
+  .two { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
+  @media (max-width: 1050px) { .two { grid-template-columns: 1fr; } }
+  .sticky { position: sticky; top: 70px; }
+  .nextbar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+  /* editor de planos */
+  .timeline { display: flex; height: 28px; border-radius: 8px; overflow: hidden; margin-bottom: 14px; background: var(--panel2); }
+  .timeline div { display: grid; place-items: center; font-size: 11px; color: #0d1a2a; background: var(--run); border-right: 1px solid var(--bg); cursor: pointer; overflow: hidden; }
+  .timeline div.sin { background: #33404d; color: var(--muted); }
+  .plano { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--run); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+           display: grid; grid-template-columns: 150px 1fr; gap: 14px; }
+  @media (max-width: 760px) { .plano { grid-template-columns: 1fr; } }
+  .plano .mini-img { aspect-ratio: 16 / 9; border-radius: 8px; background: #0a0b0c center/cover no-repeat; display: grid; place-items: center; color: var(--faint); font-size: 11px; }
+  .plano .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .plano .num { font-weight: 700; }
+  .plano .tiempo { color: var(--faint); font-size: 12px; margin-right: auto; }
   .plano input.narr { font-style: italic; }
-  .plano .lbl { font-size: 12px; color: var(--muted); margin-top: 8px; display: block; }
-  .plano .refsel { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .plano .lbl:first-of-type { margin-top: 8px; }
+  .plano .bottom { display: grid; grid-template-columns: 1fr 200px; gap: 10px; align-items: end; }
+  .refsel { display: flex; gap: 6px; flex-wrap: wrap; }
   .refchip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); cursor: pointer; color: var(--muted); user-select: none; }
   .refchip.on { background: #2a2416; color: var(--accent); border-color: #5a4a22; }
   .refchip.bad { border-color: var(--err); color: var(--err); }
-  .plano .extra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .timeline { display: flex; height: 26px; border-radius: 8px; overflow: hidden; margin-bottom: 12px; background: var(--panel2); }
-  .timeline div { display: grid; place-items: center; font-size: 11px; color: #111; border-right: 1px solid var(--bg); overflow: hidden; white-space: nowrap; cursor: pointer; }
-  .tl-foto { background: #8a8f98; } .tl-foto_video { background: var(--run); }
-  #jsonBox textarea { margin-top: 8px; }
-  .galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+
+  /* galería */
+  .galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .foto { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
-  .foto .img { aspect-ratio: 16 / 9; background: #0a0b0c; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+  .foto .img { aspect-ratio: 16 / 9; background: #0a0b0c; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
   .foto .img img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
   .foto .pie { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-  .foto .pie .l1 { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .foto .l1 { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .foto .txt { font-size: 12px; color: var(--muted); font-style: italic; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .foto .err { color: var(--err); font-size: 12px; }
-  .stage { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; margin: 12px 0 8px; }
+
+  /* audio */
+  .audiorow { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .audiorow:last-child { border-bottom: 0; }
+  .audiorow audio { width: 100%; height: 36px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .stage { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; }
   .stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; will-change: transform, opacity; }
-  .stage-cap { position: absolute; left: 0; right: 0; bottom: 6%; text-align: center; padding: 0 8%; font-size: clamp(13px, 2vw, 20px);
-               font-weight: 600; color: #fff; text-shadow: 0 2px 6px #000, 0 0 2px #000; pointer-events: none; }
-  audio, video { width: 100%; display: block; }
-  video { border-radius: 10px; background: #000; margin-top: 12px; }
-  a.btnlink { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; text-decoration: none; }
-  a.btnlink:hover { border-color: #444a52; }
+  .stage .cap { position: absolute; left: 0; right: 0; bottom: 6%; text-align: center; padding: 0 8%; font-size: clamp(13px, 1.8vw, 22px);
+                font-weight: 600; color: #fff; text-shadow: 0 2px 6px #000, 0 0 2px #000; pointer-events: none; }
+  .stage .vacio { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); text-align: center; padding: 20px; }
+  .controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .controls input[type=range] { flex: 1; }
+  .tc { font: 12px ui-monospace, Consolas, monospace; color: var(--muted); white-space: nowrap; }
+  video { width: 100%; border-radius: 10px; background: #000; display: block; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel3); border: 1px solid var(--line2); padding: 10px 14px; border-radius: 10px;
+           display: none; max-width: 440px; z-index: 30; box-shadow: 0 8px 30px #0008; }
   .lightbox { position: fixed; inset: 0; background: #000d; display: none; place-items: center; z-index: 20; cursor: zoom-out; }
   .lightbox img { max-width: 94vw; max-height: 90vh; border-radius: 8px; }
-  details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>flow<span>-</span>mackenzie</h1>
-  <span id="estado" class="badge">listo</span>
+  <div class="logo" id="goHome">flow<span>-</span>mackenzie</div>
+  <div class="crumb" id="crumb" hidden><span>/</span><b id="crumbName"></b></div>
+  <div class="spacer"></div>
+  <span class="save" id="saveState"></span>
+  <span class="badge" id="estado" hidden></span>
 </header>
 
 <main>
-  <div>
-    <section>
-      <h2>Referencias</h2>
-      <div class="refs" id="refs"></div>
-      <div class="row">
-        <input type="text" id="refNombre" placeholder="Otra referencia (p. ej. interior_noche)">
-        <button id="refAdd">Añadir</button>
+  <!-- =================== INICIO =================== -->
+  <div class="view" id="vHome">
+    <div class="home">
+      <div>
+        <section class="card">
+          <div class="head">
+            <h2>Proyectos</h2>
+            <div class="nuevo">
+              <input type="text" id="nuevoNombre" placeholder="Nombre del proyecto nuevo">
+              <button class="primary" id="crear">+ Nuevo proyecto</button>
+            </div>
+          </div>
+          <div class="proyectos" id="proyectos"></div>
+        </section>
       </div>
-      <p class="muted">Haz clic en una tarjeta para subir o cambiar su foto. En el guion se usan por su nombre: <code>"refs": ["mackenzie", "cabina"]</code>.</p>
-      <input type="file" id="refFile" accept=".png,.jpg,.jpeg,.webp" hidden>
-    </section>
-
-    <section>
-      <h2>Cuentas de Flow</h2>
-      <div class="cuentas" id="cuentas"></div>
-      <div class="row">
-        <input type="text" id="cuentaNueva" placeholder="Nombre de cuenta nueva">
-        <button id="cuentaAdd">Iniciar sesión</button>
-      </div>
-      <p class="muted">Se abre Chrome para que entres con esa cuenta. Al terminar, pulsa <a href="#" id="cuentasReload" style="color:var(--accent)">actualizar</a>.</p>
-    </section>
-
-    <section>
-      <h2>Ajustes</h2>
-      <div class="grid2">
-        <div><label>Modelo de imagen</label><input type="text" id="imgModel" value="Nano Banana 2.1"></div>
-        <div><label>Formato</label>
-          <select id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select></div>
-      </div>
-      <p class="muted">Flow solo genera las imágenes y se descargan. El movimiento, los fundidos y la voz en off se ponen en el render (<code>montaje.py</code>).</p>
-    </section>
+      <aside>
+        <section class="card">
+          <h2>Referencias</h2>
+          <div class="refs" id="refs"></div>
+          <div class="row" style="margin-top:10px">
+            <input type="text" id="refNombre" placeholder="Nombre (p. ej. interior_noche)" style="flex:1">
+            <button id="refAdd">Añadir</button>
+          </div>
+          <p class="faint">Clic en una foto para cambiarla. En el guion se usan por su nombre.</p>
+          <input type="file" id="refFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+        </section>
+        <section class="card">
+          <h2>Cuentas de Flow</h2>
+          <div id="cuentasHome"></div>
+          <div class="row" style="margin-top:10px">
+            <input type="text" id="cuentaNueva" placeholder="Nombre de cuenta nueva" style="flex:1">
+            <button id="cuentaAdd">Iniciar sesión</button>
+          </div>
+          <p class="faint">Se abre Chrome para entrar con esa cuenta. Después pulsa <a href="#" id="cuentasReload">actualizar</a>.</p>
+        </section>
+      </aside>
+    </div>
   </div>
 
-  <div>
-    <section>
-      <div class="head">
-        <h2>Guion</h2>
-        <div style="display:flex;gap:8px">
-          <button id="cargar">Cargar JSON…</button>
-          <button id="ejemplo">Ejemplo</button>
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:10px"><label>Nombre del proyecto</label>
-        <input type="text" id="proyecto" placeholder="p. ej. manana_en_la_cabina"></div>
-      <div class="timeline" id="timeline"></div>
-      <div id="planos"></div>
-      <div class="row">
-        <button id="addPlano">+ Añadir plano</button>
-        <span class="muted" id="totalInfo"></span>
-      </div>
-      <div class="errors" id="errores"></div>
-      <details id="jsonBox"><summary>JSON del guion (pegar o copiar)</summary>
-        <textarea id="json" spellcheck="false" placeholder='Pega aquí el JSON del guion: { "jobs": [ ... ] }'></textarea>
-        <div class="row"><button id="copiarJson">Copiar JSON</button></div>
-      </details>
-      <input type="file" id="jsonFile" accept=".json" hidden>
-      <div class="row" style="justify-content:flex-end">
-        <button class="danger" id="parar" hidden>Parar</button>
-        <button class="primary" id="empezar">Empezar</button>
-      </div>
-    </section>
+  <!-- =================== PROYECTO =================== -->
+  <div class="view" id="vProj" hidden>
+    <div class="row" style="margin-bottom:14px">
+      <button class="ghost" id="volver">← Proyectos</button>
+    </div>
+    <nav class="steps" id="steps">
+      <div class="step" data-tab="guion"><span class="n">1</span><div>Guion<div class="s" id="sGuion"></div></div></div>
+      <div class="step" data-tab="imagenes"><span class="n">2</span><div>Imágenes<div class="s" id="sImg"></div></div></div>
+      <div class="step" data-tab="audio"><span class="n">3</span><div>Audio<div class="s" id="sAudio"></div></div></div>
+      <div class="step" data-tab="render"><span class="n">4</span><div>Render<div class="s" id="sRender"></div></div></div>
+    </nav>
 
-    <section>
-      <div class="head"><h2>Proyecto</h2>
-        <div style="display:flex;gap:8px;align-items:center">
-          <select id="proyectos" style="width:auto;min-width:220px"></select>
-          <button id="abrir">Abrir</button>
-        </div>
+    <!-- 1. GUION -->
+    <div class="pane" id="pGuion">
+      <div class="two">
+        <section class="card">
+          <div class="head">
+            <h2>Planos</h2>
+            <div class="row">
+              <button id="cargar">Cargar JSON…</button>
+              <button id="ejemplo">Ejemplo</button>
+              <button id="addPlano">+ Añadir plano</button>
+            </div>
+          </div>
+          <div class="timeline" id="timeline"></div>
+          <div id="planos"></div>
+          <div class="errors" id="errores"></div>
+          <details id="jsonBox"><summary>JSON del guion (pegar el que te da Claude, o copiarlo)</summary>
+            <textarea class="mono" id="json" spellcheck="false" placeholder='Pega aquí el JSON: { "jobs": [ ... ] }'></textarea>
+            <div class="row" style="margin-top:8px"><button id="copiarJson">Copiar JSON</button><span class="faint">Al pegar, sustituye los planos del editor.</span></div>
+          </details>
+          <input type="file" id="jsonFile" accept=".json" hidden>
+        </section>
+        <aside class="sticky">
+          <section class="card">
+            <h2>Ajustes de imagen</h2>
+            <label class="lbl">Modelo de imagen</label>
+            <input type="text" id="imgModel">
+            <label class="lbl">Formato</label>
+            <select id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select>
+            <p class="faint" style="margin-top:12px">Todo se guarda solo mientras editas. Puedes cerrar y seguir otro día.</p>
+            <div class="nextbar"><button class="primary" data-go="imagenes">Siguiente: Imágenes →</button></div>
+          </section>
+        </aside>
       </div>
-      <p class="muted" id="proyectoInfo">Abre un proyecto anterior o pulsa Empezar en el guion para crear uno.</p>
-    </section>
+    </div>
 
-    <section id="progreso" hidden>
-      <div class="head"><h2>Imágenes</h2><span class="muted" id="progresoInfo"></span></div>
-      <div class="links" id="links"></div>
-      <div class="galeria" id="filas"></div>
-      <details><summary>Ver registro</summary><pre class="log" id="log"></pre></details>
-    </section>
+    <!-- 2. IMÁGENES -->
+    <div class="pane" id="pImagenes" hidden>
+      <div class="two">
+        <section class="card">
+          <div class="head"><h2>Imágenes</h2><span class="muted" id="imgInfo"></span></div>
+          <div class="links" id="links"></div>
+          <div class="galeria" id="galeria"></div>
+          <details><summary>Ver registro</summary><pre class="log" id="log"></pre></details>
+        </section>
+        <aside class="sticky">
+          <section class="card">
+            <h2>Generar en Flow</h2>
+            <div id="cuentasProj"></div>
+            <div class="row" style="margin-top:12px">
+              <button class="primary" id="genFaltan">Generar las que faltan</button>
+              <button id="genTodas">Regenerar todas</button>
+              <button class="danger" id="parar" hidden>Parar</button>
+            </div>
+            <p class="faint">Para cambiar una sola imagen usa ↻ Rehacer en su tarjeta (usa el prompt que tenga en el guion).</p>
+            <p class="warn" id="otroGen" hidden></p>
+            <div class="nextbar"><button class="primary" data-go="audio">Siguiente: Audio →</button></div>
+          </section>
+        </aside>
+      </div>
+    </div>
 
-    <section id="montaje" hidden>
-      <div class="head"><h2>Narración, vista previa y render</h2><span class="muted" id="montajeInfo"></span></div>
-      <div class="row" style="margin-top:0">
-        <button id="subirAudio">Subir narración…</button>
-        <span class="muted" id="audioNombre">Sin narración</span>
-        <input type="file" id="audioFile" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,audio/*" hidden>
+    <!-- 3. AUDIO -->
+    <div class="pane" id="pAudio" hidden>
+      <div class="two">
+        <section class="card">
+          <div class="head"><h2>Vista previa</h2><span class="muted" id="previaInfo"></span></div>
+          <div class="stage" id="stage">
+            <img id="layA" alt=""><img id="layB" alt="">
+            <div class="cap" id="stageCap"></div>
+            <div class="vacio" id="stageVacio">Sube la narración y pulsa «Calcular tiempos» para ver aquí el vídeo con tu voz.</div>
+          </div>
+          <div class="controls">
+            <button id="play" disabled>▶</button>
+            <input type="range" id="seek" min="0" max="1000" value="0" disabled>
+            <span class="tc" id="tc">0:00 / 0:00</span>
+          </div>
+          <div class="faint" id="stagePlano" style="margin-top:6px"></div>
+          <audio id="voz" preload="auto"></audio>
+          <audio id="mus" preload="auto" loop></audio>
+        </section>
+        <aside class="sticky">
+          <section class="card">
+            <h2>Voz en off</h2>
+            <div class="row"><button id="subirVoz">Subir narración…</button><span class="muted" id="vozNombre">Sin narración</span></div>
+            <input type="file" id="vozFile" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,audio/*" hidden>
+            <div class="row"><button id="calcTiempos">Calcular tiempos</button></div>
+            <p class="faint">Transcribe tu voz y coloca cada imagen en su frase. La primera vez tarda más.</p>
+          </section>
+          <section class="card">
+            <h2>Música de fondo</h2>
+            <div class="row"><button id="subirMus">Subir música…</button><span class="muted" id="musNombre">Sin música</span>
+              <button class="ghost mini" id="quitarMus" hidden>Quitar</button></div>
+            <input type="file" id="musFile" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,audio/*" hidden>
+            <label class="lbl">Volumen de la música: <b id="musDbTxt"></b></label>
+            <input type="range" id="musDb" min="-35" max="0" step="1">
+            <label class="lbl">Ducking (cuánto baja cuando hablas)</label>
+            <select id="ducking">
+              <option value="no">Sin ducking</option>
+              <option value="suave">Suave (−6 dB)</option>
+              <option value="media">Media (−10 dB)</option>
+              <option value="fuerte">Fuerte (−16 dB)</option>
+            </select>
+            <p class="faint">Se repite si es corta y se funde al principio y al final. En la vista previa ya suena como en el render.</p>
+            <div class="nextbar"><button class="primary" data-go="render">Siguiente: Render →</button></div>
+          </section>
+        </aside>
       </div>
-      <div class="row">
-        <button id="calcTiempos">Calcular tiempos</button>
-        <span class="muted">Transcribe tu voz y coloca cada imagen en su frase (la primera vez tarda más).</span>
+    </div>
+
+    <!-- 4. RENDER -->
+    <div class="pane" id="pRender" hidden>
+      <div class="two">
+        <section class="card">
+          <div class="head"><h2>Vídeo final</h2><span class="muted" id="renderInfo"></span></div>
+          <div id="resultado" hidden>
+            <video id="video" controls preload="metadata"></video>
+            <div class="row" style="margin-top:12px">
+              <a id="dlVideo" download><button>Descargar montaje.mp4</button></a>
+              <a id="dlSrt" download><button>Descargar subtítulos .srt</button></a>
+            </div>
+          </div>
+          <div class="empty" id="sinVideo">Aún no hay vídeo. Pulsa <b>Render</b>.</div>
+          <pre class="log" id="renderLog" hidden></pre>
+        </section>
+        <aside class="sticky">
+          <section class="card">
+            <h2>Render</h2>
+            <label class="lbl">Transición entre imágenes</label>
+            <select id="transicion"><option value="fundido">Fundido corto (0,25 s)</option><option value="corte">Corte seco</option></select>
+            <ul class="faint" id="checklist" style="list-style:none;padding-left:0;margin:12px 0;line-height:1.7"></ul>
+            <div class="row">
+              <button class="primary" id="render">Render</button>
+              <button class="danger" id="renderStop" hidden>Parar</button>
+            </div>
+            <p class="faint">1080p, 16:9. El .srt es para poner los subtítulos con tu estilo en CapCut.</p>
+          </section>
+        </aside>
       </div>
-      <div id="previa" hidden>
-        <div class="stage" id="stage"><img id="layA" alt=""><img id="layB" alt=""><div class="stage-cap" id="stageCap"></div></div>
-        <audio id="audio" controls preload="auto"></audio>
-        <div class="muted" id="stagePlano"></div>
-      </div>
-      <div class="row">
-        <select id="transicion" style="width:auto"><option value="fundido">Fundido corto (0,25 s)</option><option value="corte">Corte seco</option></select>
-        <button class="primary" id="render">Render</button>
-        <button class="danger" id="renderStop" hidden>Parar render</button>
-      </div>
-      <pre class="log" id="renderLog" hidden></pre>
-      <div id="resultado" hidden>
-        <video id="video" controls preload="metadata"></video>
-        <div class="row"><a id="dlVideo" class="btnlink" download>Descargar montaje.mp4</a><a id="dlSrt" class="btnlink" download>Descargar montaje.srt</a></div>
-      </div>
-    </section>
+    </div>
   </div>
 </main>
+
 <div class="toast" id="toast"></div>
 <div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let refsActuales = [];
-let refDestino = null;
-let pollTimer = null;
+const fmt = (t) => { t = Math.max(0, t || 0); return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`; };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function toast(msg, ms = 3500) {
   const t = $("toast"); t.textContent = msg; t.style.display = "block";
@@ -243,39 +381,111 @@ function toast(msg, ms = 3500) {
 }
 async function api(path, body) {
   const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
-  const data = await r.json();
+  let data = {}; try { data = await r.json(); } catch {}
   if (!r.ok) throw new Error(data.error || "Error");
   return data;
 }
-function guardarLocal() {
-  try { localStorage.setItem("fm_estado", JSON.stringify({
-    json: $("json").value, proyecto: $("proyecto").value,
-    imgModel: $("imgModel").value, ratio: $("ratio").value })); } catch {}
+const leerArchivo = (f) => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.readAsDataURL(f); });
+
+/* =====================================================================
+   Estado global
+   ===================================================================== */
+let refsActuales = [], refsUrls = {}, cuentasLista = [];
+let P = null;          // proyecto abierto: {name, planos, ajustes, estado}
+let tab = "guion";
+let pollTimer = null;
+
+/* ---------- Navegación (misma ventana, con #/p/nombre/paso) ---------- */
+function ruta() {
+  const m = location.hash.match(/^#\/p\/([^/]+)(?:\/(\w+))?/);
+  return m ? {name: decodeURIComponent(m[1]), tab: m[2] || "guion"} : null;
 }
-function cargarLocal() {
+async function enrutar() {
+  const r = ruta();
+  if (!r) { await cerrarProyecto(); mostrarHome(); return; }
+  if (!P || P.name !== r.name) { await cerrarProyecto(); if (!(await abrirProyecto(r.name))) return; }
+  irTab(r.tab, false);
+}
+window.addEventListener("hashchange", enrutar);
+$("goHome").onclick = () => { location.hash = "#/"; };
+$("volver").onclick = () => { location.hash = "#/"; };
+
+/* =====================================================================
+   INICIO
+   ===================================================================== */
+async function mostrarHome() {
+  $("vHome").hidden = false; $("vProj").hidden = true; $("crumb").hidden = true;
+  $("estado").hidden = true; $("saveState").textContent = "";
+  document.title = "flow-mackenzie";
+  await Promise.all([cargarProyectos(), cargarRefs(), cargarCuentas()]);
+  clearTimeout(pollTimer); pollTimer = setTimeout(pollHome, 5000);
+}
+async function pollHome() { if (!$("vHome").hidden) { await cargarProyectos(); pollTimer = setTimeout(pollHome, 5000); } }
+
+async function cargarProyectos() {
+  let lista = [];
+  try { lista = (await api("/api/proyectos")).proyectos; } catch (e) { toast(e.message); }
+  $("proyectos").innerHTML = lista.length ? lista.map(p => `
+    <div class="pcard">
+      <div class="cover" data-abrir="${esc(p.name)}" style="${p.thumb ? `background-image:url('${esc(p.thumb)}')` : ""}">
+        ${p.thumb ? "" : "sin imágenes"}
+        <div class="tags">${p.video ? `<span class="chip hecho">vídeo listo</span>` : ""}${p.ocupado ? `<span class="chip generando">trabajando…</span>` : ""}</div>
+      </div>
+      <div class="body">
+        <div class="nm" data-abrir="${esc(p.name)}">${esc(p.name)}</div>
+        <div class="faint">${p.imagenes}/${p.planos} imágenes · ${p.narracion ? "con narración" : "sin narración"}</div>
+        <div class="faint">Modificado ${esc(p.modificado)}</div>
+        <div class="acts">
+          <button class="primary mini" data-abrir="${esc(p.name)}">Abrir</button>
+          <button class="mini" data-duplicar="${esc(p.name)}" title="Duplicar">Duplicar</button>
+          <button class="mini danger" data-borrar="${esc(p.name)}" title="Borrar" ${p.ocupado ? "disabled" : ""}>Borrar</button>
+        </div>
+      </div>
+    </div>`).join("") : `<div class="empty" style="grid-column:1/-1">Aún no hay proyectos. Escribe un nombre y pulsa <b>+ Nuevo proyecto</b>.</div>`;
+}
+$("proyectos").addEventListener("click", async (e) => {
+  const a = e.target.closest("[data-abrir]");
+  if (a) { location.hash = `#/p/${encodeURIComponent(a.dataset.abrir)}/guion`; return; }
+  const d = e.target.closest("[data-duplicar]");
+  if (d) {
+    const nuevo = prompt(`Nombre de la copia de «${d.dataset.duplicar}»:`, `${d.dataset.duplicar}_copia`);
+    if (nuevo === null) return;
+    try { const r = await api("/api/proyecto/duplicar", {name: d.dataset.duplicar, nuevo}); toast(`Copiado como «${r.name}» (con imágenes y audio).`); cargarProyectos(); }
+    catch (err) { toast(err.message, 6000); }
+    return;
+  }
+  const b = e.target.closest("[data-borrar]");
+  if (b) {
+    if (!confirm(`¿Borrar el proyecto «${b.dataset.borrar}»?\n\nSe eliminan su carpeta, sus imágenes, audio y vídeo de tu PC. No se puede deshacer.\n(En Flow no se borra nada.)`)) return;
+    try { await api("/api/proyecto/borrar", {name: b.dataset.borrar}); toast(`Proyecto «${b.dataset.borrar}» borrado.`); cargarProyectos(); }
+    catch (err) { toast(err.message, 6000); }
+  }
+});
+$("crear").onclick = async () => {
+  const name = $("nuevoNombre").value.trim().replace(/\s+/g, "_");
   try {
-    const s = JSON.parse(localStorage.getItem("fm_estado") || "null"); if (!s) return;
-    $("json").value = s.json || ""; $("proyecto").value = s.proyecto || "";
-    for (const k of ["imgModel","ratio"]) if (s[k]) $(k).value = s[k];
-  } catch {}
-}
+    const r = await api("/api/proyecto/crear", {name});
+    $("nuevoNombre").value = "";
+    location.hash = `#/p/${encodeURIComponent(r.name)}/guion`;
+  } catch (e) { toast(e.message); }
+};
+$("nuevoNombre").addEventListener("keydown", (e) => { if (e.key === "Enter") $("crear").click(); });
 
 /* ---------- Referencias ---------- */
+let refDestino = null;
 async function cargarRefs() {
   const {refs} = await api("/api/refs");
-  refsActuales = refs.map(r => r.name);
-  $("refs").innerHTML = refs.map(r => `<div class="ref has" data-n="${esc(r.name)}" title="Clic para cambiar la foto">
-      <img src="${esc(r.url)}" alt="">
-      <div class="nm"><span>${esc(r.name)}</span><button class="x" data-del="${esc(r.name)}" title="Borrar referencia">🗑</button></div></div>`).join("")
-    + `<div class="ref" data-nueva="1" title="Añadir referencia"><div class="ph">+</div><div class="nm"><span class="muted">nueva</span></div></div>`;
-  pintarPlanos(); validar();
+  refsActuales = refs.map(r => r.name); refsUrls = Object.fromEntries(refs.map(r => [r.name, r.url]));
+  $("refs").innerHTML = refs.map(r => `<div class="ref" data-n="${esc(r.name)}" title="Clic para cambiar la foto">
+      <img src="${esc(r.url)}" alt=""><div class="nm"><span>${esc(r.name)}</span><button class="x" data-del="${esc(r.name)}" title="Borrar referencia">🗑</button></div></div>`).join("")
+    + `<div class="ref" data-nueva="1"><div class="ph">+</div><div class="nm"><span class="faint">nueva</span></div></div>`;
 }
 $("refs").addEventListener("click", async (e) => {
   const del = e.target.closest("[data-del]");
   if (del) {
     e.stopPropagation();
     if (!confirm(`¿Borrar la referencia «${del.dataset.del}»? Se elimina su foto de la carpeta refs.`)) return;
-    await api("/api/ref/borrar", {name: del.dataset.del}); toast(`Referencia «${del.dataset.del}» borrada.`); return cargarRefs();
+    await api("/api/ref/borrar", {ref: del.dataset.del}); toast(`Referencia «${del.dataset.del}» borrada.`); return cargarRefs();
   }
   const card = e.target.closest(".ref"); if (!card) return;
   if (card.dataset.nueva) { $("refNombre").focus(); return toast("Escribe el nombre de la referencia y pulsa Añadir."); }
@@ -288,318 +498,387 @@ $("refAdd").onclick = () => {
 };
 $("refFile").onchange = async () => {
   const f = $("refFile").files[0]; $("refFile").value = ""; if (!f || !refDestino) return;
-  const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.readAsDataURL(f); });
-  try { await api("/api/ref", {name: refDestino, filename: f.name, data}); $("refNombre").value = ""; toast(`Referencia «${refDestino}» guardada.`); }
+  try { await api("/api/ref", {ref: refDestino, filename: f.name, data: await leerArchivo(f)}); $("refNombre").value = ""; toast(`Referencia «${refDestino}» guardada.`); }
   catch (e) { toast(e.message); }
   cargarRefs();
 };
 
 /* ---------- Cuentas ---------- */
+let cuentasElegidas = null;
+try { cuentasElegidas = JSON.parse(localStorage.getItem("fm_cuentas") || "null"); } catch {}
 async function cargarCuentas() {
-  const prev = new Set([...document.querySelectorAll("#cuentas input:checked")].map(i => i.value));
-  const {cuentas} = await api("/api/cuentas");
-  $("cuentas").innerHTML = cuentas.length
-    ? cuentas.map(c => `<div class="cuenta"><label><input type="checkbox" value="${esc(c)}" ${prev.size === 0 || prev.has(c) ? "checked" : ""}> ${esc(c)}</label>
-        <button class="mini danger" data-borrar-cuenta="${esc(c)}" title="Borrar cuenta">🗑</button></div>`).join("")
+  cuentasLista = (await api("/api/cuentas")).cuentas;
+  $("cuentasHome").innerHTML = cuentasLista.length ? cuentasLista.map(c => `<div class="cuenta"><span>${esc(c)}</span>
+      <button class="x" data-borrar-cuenta="${esc(c)}" title="Borrar cuenta">🗑</button></div>`).join("")
     : `<p class="muted">Aún no hay cuentas. Añade una abajo.</p>`;
+  pintarCuentasProj();
 }
+function pintarCuentasProj() {
+  const sel = new Set(cuentasElegidas || cuentasLista);
+  $("cuentasProj").innerHTML = cuentasLista.length
+    ? `<div class="lbl" style="margin-top:0">Cuentas a usar</div>` + cuentasLista.map(c => `<label style="display:flex;gap:8px;align-items:center;padding:4px 0;cursor:pointer">
+        <input type="checkbox" value="${esc(c)}" ${sel.has(c) ? "checked" : ""} style="accent-color:var(--accent)"> ${esc(c)}</label>`).join("")
+    : `<p class="warn">No hay cuentas: añádelas en el inicio.</p>`;
+}
+function cuentasMarcadas() { return [...document.querySelectorAll("#cuentasProj input:checked")].map(i => i.value); }
+$("cuentasProj").addEventListener("change", () => { cuentasElegidas = cuentasMarcadas(); try { localStorage.setItem("fm_cuentas", JSON.stringify(cuentasElegidas)); } catch {} });
 $("cuentaAdd").onclick = async () => {
   const c = $("cuentaNueva").value.trim(); if (!c) return toast("Escribe un nombre de cuenta.");
   await api("/api/login", {cuenta: c}); $("cuentaNueva").value = "";
   toast(`Se abre Chrome para «${c}». Inicia sesión y luego pulsa actualizar.`, 6000);
 };
 $("cuentasReload").onclick = (e) => { e.preventDefault(); cargarCuentas(); };
-$("cuentas").addEventListener("click", async (e) => {
+$("cuentasHome").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-borrar-cuenta]"); if (!b) return;
-  e.preventDefault();
   const c = b.dataset.borrarCuenta;
-  if (!confirm(`¿Borrar la cuenta «${c}»? Se borra su sesión guardada en este PC (tu cuenta de Google no se toca). Para volver a usarla tendrás que iniciar sesión otra vez.`)) return;
+  if (!confirm(`¿Borrar la cuenta «${c}»? Se borra su sesión guardada en este PC (tu cuenta de Google no se toca).`)) return;
   try { await api("/api/cuenta/borrar", {cuenta: c}); toast(`Cuenta «${c}» borrada.`); } catch (err) { toast(err.message, 6000); }
   cargarCuentas();
 });
 
-/* ---------- Guion: editor de planos (solo fotos) ---------- */
-// Cada plano es una foto que se genera en Flow con sus referencias. En el render
-// dura lo que dura su frase de la voz en off y lleva movimiento suave.
-const EFECTOS = {"": "Automático", zoom_in: "Acercar", zoom_out: "Alejar",
-                 paneo_der: "Paneo a la derecha", paneo_izq: "Paneo a la izquierda", subir: "Subir", bajar: "Bajar"};
-let planos = [];
-
-function segDe(p) {   // estimación para la línea de tiempo (~2,6 palabras/s)
-  const n = (p.texto || "").trim().split(/\s+/).filter(Boolean).length;
-  return n ? Math.max(2, Math.round(n / 2.6)) : 4;
+/* =====================================================================
+   PROYECTO
+   ===================================================================== */
+async function abrirProyecto(name) {
+  let s;
+  try { s = await api(`/api/proyecto?name=${encodeURIComponent(name)}&guion=1`); }
+  catch (e) { toast(e.message, 6000); location.hash = "#/"; return false; }
+  P = {name: s.project, ajustes: s.ajustes, estado: s, planos: planosDesdeJobs(s.guion.jobs || [])};
+  $("vHome").hidden = true; $("vProj").hidden = false; $("crumb").hidden = false; $("estado").hidden = false;
+  $("crumbName").textContent = P.name; document.title = `${P.name} · flow-mackenzie`;
+  $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;
+  $("musDb").value = P.ajustes.musica_db; $("ducking").value = P.ajustes.ducking; $("transicion").value = P.ajustes.transicion;
+  pintarMusDb();
+  saveState("Guardado");
+  if (!refsActuales.length) await cargarRefs();
+  if (!cuentasLista.length) await cargarCuentas(); else pintarCuentasProj();
+  previa = null; detenerPrevia();
+  refrescarEditor(false);
+  pintarEstado(s);
+  poll();
+  return true;
 }
-function fmt(t) { return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; }
+async function cerrarProyecto() {
+  if (!P) return;
+  await guardarYa();
+  detenerPrevia();
+  P = null; clearTimeout(pollTimer);
+}
 
+function irTab(t, push = true) {
+  if (!["guion", "imagenes", "audio", "render"].includes(t)) t = "guion";
+  tab = t;
+  for (const el of document.querySelectorAll(".step")) el.classList.toggle("on", el.dataset.tab === t);
+  $("pGuion").hidden = t !== "guion"; $("pImagenes").hidden = t !== "imagenes";
+  $("pAudio").hidden = t !== "audio"; $("pRender").hidden = t !== "render";
+  if (t !== "audio") pausarPrevia();
+  if (push && P) history.replaceState(null, "", `#/p/${encodeURIComponent(P.name)}/${t}`);
+  window.scrollTo({top: 0});
+}
+$("steps").addEventListener("click", (e) => { const s = e.target.closest("[data-tab]"); if (s) irTab(s.dataset.tab); });
+document.addEventListener("click", (e) => { const g = e.target.closest("[data-go]"); if (g) irTab(g.dataset.go); });
+
+/* ---------- Guardado automático ---------- */
+let saveTimer = null, savePending = null, saving = Promise.resolve();
+function saveState(txt, cls = "") { const s = $("saveState"); s.textContent = txt; s.className = "save " + cls; }
+function guardar(parte) {          // parte: "guion" | "ajustes"
+  if (!P) return;
+  savePending = {...(savePending || {}), [parte]: true};
+  saveState("Guardando…", "ing");
+  clearTimeout(saveTimer); saveTimer = setTimeout(guardarYa, 700);
+}
+async function guardarYa() {
+  clearTimeout(saveTimer);
+  if (!P || !savePending) return saving;
+  const que = savePending; savePending = null;
+  const body = {name: P.name};
+  if (que.guion) body.guion = {jobs: jobsDesdePlanos()};
+  if (que.ajustes) body.ajustes = leerAjustes();
+  saving = saving.then(async () => {
+    try { const r = await api("/api/proyecto/guardar", body); saveState(`Guardado ${r.guardado}`); }
+    catch (e) { saveState("Error al guardar", "err"); toast("No se pudo guardar: " + e.message, 6000); }
+  });
+  return saving;
+}
+window.addEventListener("beforeunload", (e) => { if (savePending) { guardarYa(); e.preventDefault(); e.returnValue = ""; } });
+function leerAjustes() {
+  return {image_model: $("imgModel").value.trim(), ratio: $("ratio").value, musica_db: +$("musDb").value,
+          ducking: $("ducking").value, transicion: $("transicion").value};
+}
+for (const id of ["imgModel", "ratio", "ducking", "transicion"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
+$("imgModel").addEventListener("input", () => guardar("ajustes"));
+$("musDb").addEventListener("input", () => { pintarMusDb(); P.ajustes = leerAjustes(); guardar("ajustes"); });
+function pintarMusDb() { $("musDbTxt").textContent = `${$("musDb").value} dB`; }
+
+/* ---------- Editor de planos ---------- */
+const EFECTOS = {"": "Automático", zoom_in: "Acercar", zoom_out: "Alejar", paneo_der: "Paneo a la derecha",
+                 paneo_izq: "Paneo a la izquierda", subir: "Subir", bajar: "Bajar"};
 function planosDesdeJobs(jobs) {
-  const imgs = jobs.filter(j => (j.type || "image") === "image");
-  return imgs.map(j => {
-    // si un JSON antiguo traía el texto en el vídeo, se recupera
+  return jobs.filter(j => (j.type || "image") === "image").map(j => {
     const v = jobs.find(x => x.type === "video" && x.start && x.start.replace(/\.\w+$/, "") === j.name);
-    return {name: j.name, refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || ""};
+    return {name: j.name || "", refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || ""};
   });
 }
-
 function asegurarNombres() {
-  // Cada plano conserva su nombre (así «Rehacer» y el render encuentran su imagen
-  // aunque muevas planos). Los nuevos reciben el siguiente número libre.
   const usados = new Set();
-  for (const p of planos) { if (p.name && !usados.has(p.name)) usados.add(p.name); else p.name = ""; }
+  for (const p of P.planos) { if (p.name && !usados.has(p.name)) usados.add(p.name); else p.name = ""; }
   let n = 1;
-  for (const p of planos) if (!p.name) {
+  for (const p of P.planos) if (!p.name) {
     while (usados.has(`plano${String(n).padStart(2, "0")}`)) n++;
     p.name = `plano${String(n).padStart(2, "0")}`; usados.add(p.name);
   }
 }
 function jobsDesdePlanos() {
   asegurarNombres();
-  return planos.map((p, i) => {
+  return P.planos.map(p => {
     const job = {type: "image", name: p.name, refs: p.refs || [], prompt: p.img};
     if (p.texto) job.texto = p.texto;
     if (p.efecto) job.efecto = p.efecto;
     return job;
   });
 }
-
-function escribirJson() {
-  $("json").value = JSON.stringify({project: $("proyecto").value.trim() || undefined, jobs: jobsDesdePlanos()}, null, 2);
-  guardarLocal();
-}
-
-function importarTexto() {
-  const txt = $("json").value.trim();
-  if (!txt) { planos = []; return []; }
-  let g; try { g = JSON.parse(txt); } catch (e) { return ["El JSON no es válido: " + e.message]; }
-  if (Array.isArray(g)) g = {jobs: g};
-  if (g.project && !$("proyecto").value) $("proyecto").value = g.project;
-  planos = planosDesdeJobs(g.jobs || []);
-  return [];
-}
-
-function erroresPlanos() {
-  const e = [];
-  if (!planos.length) e.push("No hay planos.");
-  planos.forEach((p, i) => {
-    const n = `Plano ${i + 1}`;
-    if (!(p.img || "").trim()) e.push(`${n}: falta el prompt de la foto.`);
-    for (const r of p.refs || []) if (!refsActuales.includes(r)) e.push(`${n}: falta la referencia «${r}».`);
-  });
-  const sinTexto = planos.filter(p => !(p.texto || "").trim()).length;
-  if (planos.length && sinTexto === planos.length) e.push("Ningún plano tiene narración: el render repartirá el audio a partes iguales.");
-  return e;
-}
+const segDe = (p) => { const n = (p.texto || "").trim().split(/\s+/).filter(Boolean).length; return n ? Math.max(2, Math.round(n / 2.6)) : 4; };
+function thumbDe(name) { const e = P && P.estado && P.estado.planos.find(x => x.name === name); return e && e.thumb; }
 
 function pintarPlanos() {
-  let t = 0; const tl = [];
-  $("planos").innerHTML = planos.map((p, i) => {
-    const s = segDe(p); const ini = t; t += s;
-    tl.push(`<div class="tl-foto_video" style="flex:${s}" data-go="${i}" title="Plano ${i + 1} · ~${fmt(ini)}–${fmt(t)}">${i + 1}</div>`);
+  let t = 0;
+  const tl = [];
+  $("planos").innerHTML = P.planos.length ? P.planos.map((p, i) => {
+    const s = segDe(p), ini = t; t += s;
+    const th = thumbDe(p.name);
+    tl.push(`<div class="${th ? "" : "sin"}" style="flex:${s}" data-goto="${i}" title="${esc(p.name)} · ~${fmt(ini)}">${i + 1}</div>`);
     const refsFoto = [...new Set([...refsActuales, ...(p.refs || [])])];
-    return `<div class="plano foto_video" id="pl${i}">
-      <div class="top">
-        <span class="num">Plano ${i + 1}</span><span class="muted">${esc(p.name || "")}</span>
-        <span class="tiempo">~${fmt(ini)} – ${fmt(t)}</span>
-        <button class="mini" data-mv="${i}" data-d="-1" title="Subir">↑</button>
-        <button class="mini" data-mv="${i}" data-d="1" title="Bajar">↓</button>
-        <button class="mini" data-dup="${i}" title="Duplicar">⧉</button>
-        <button class="mini danger" data-del-pl="${i}" title="Borrar">✕</button>
-      </div>
-      <span class="lbl">Voz en off de este plano (la frase de tu audio mientras se ve esta imagen)</span>
-      <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto || "")}" placeholder="Vacío = sigue con la frase del plano anterior">
-      <span class="lbl">Referencias de la foto</span>
-      <div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="muted">Sube referencias arriba.</span>`}</div>
-      <span class="lbl">Prompt de la foto</span>
-      <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
-      <div class="extra">
-        <div><span class="lbl">Movimiento en el render</span><select data-i="${i}" data-k="efecto">
-          ${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+    return `<div class="plano" id="pl${i}">
+      <div class="mini-img" style="${th ? `background-image:url('${esc(th)}')` : ""}">${th ? "" : "sin imagen"}</div>
+      <div>
+        <div class="top">
+          <span class="num">${i + 1}</span><span class="faint">${esc(p.name || "nuevo")}</span>
+          <span class="tiempo">~${fmt(ini)} – ${fmt(t)}</span>
+          <button class="mini ghost" data-mv="${i}" data-d="-1" title="Subir">↑</button>
+          <button class="mini ghost" data-mv="${i}" data-d="1" title="Bajar">↓</button>
+          <button class="mini ghost" data-dup="${i}" title="Duplicar">⧉</button>
+          <button class="mini ghost danger" data-del-pl="${i}" title="Borrar plano">✕</button>
+        </div>
+        <span class="lbl">Voz en off (la frase de tu audio mientras se ve esta imagen)</span>
+        <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto)}" placeholder="Vacío = comparte la frase del plano anterior">
+        <span class="lbl">Prompt de la foto</span>
+        <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
+        <div class="bottom">
+          <div><span class="lbl">Referencias</span><div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="faint">Sube referencias en el inicio.</span>`}</div></div>
+          <div><span class="lbl">Movimiento</span><select data-i="${i}" data-k="efecto">${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        </div>
       </div>
     </div>`;
-  }).join("");
-  $("timeline").innerHTML = planos.length ? tl.join("") : "";
-  $("totalInfo").textContent = planos.length ? `${planos.length} imágenes · ~${fmt(t)} (la duración real la marca tu audio)` : "";
+  }).join("") : `<div class="empty">Este proyecto aún no tiene planos.<br><br>Pega el JSON que te da Claude en <b>«JSON del guion»</b> (abajo), cárgalo con <b>Cargar JSON…</b> o pulsa <b>+ Añadir plano</b>.</div>`;
+  $("timeline").innerHTML = tl.join("");
+  $("timeline").hidden = !P.planos.length;
+  if (!P.planos.length) $("jsonBox").open = true;
+  pintarResumen();
 }
-
 function validar() {
-  const errores = erroresPlanos();
-  $("errores").textContent = planos.length ? errores.join("\n") : "";
-  const bloquea = errores.filter(x => !x.startsWith("Ningún plano tiene narración"));
-  return {guion: {project: $("proyecto").value.trim() || undefined, jobs: jobsDesdePlanos()}, errores: bloquea};
+  const e = [];
+  P.planos.forEach((p, i) => {
+    if (!(p.img || "").trim()) e.push(`Plano ${i + 1}: falta el prompt de la foto.`);
+    for (const r of p.refs || []) if (!refsActuales.includes(r)) e.push(`Plano ${i + 1}: falta la referencia «${r}».`);
+  });
+  $("errores").textContent = e.join("\n");
+  return e;
 }
-function refrescar() { pintarPlanos(); escribirJson(); validar(); }
+function escribirJson() { $("json").value = JSON.stringify({project: P.name, jobs: jobsDesdePlanos()}, null, 2); }
+function refrescarEditor(save = true) { asegurarNombres(); pintarPlanos(); escribirJson(); validar(); if (save) guardar("guion"); }
 
 $("planos").addEventListener("input", (e) => {
-  const el = e.target; const i = +el.dataset.i; const k = el.dataset.k;
-  if (!k || !planos[i] || el.tagName === "SELECT") return;
-  planos[i][k] = el.value; escribirJson(); validar();
-  if (k === "texto") pintarTiempos();
+  const el = e.target, i = +el.dataset.i, k = el.dataset.k;
+  if (!k || !P.planos[i] || el.tagName === "SELECT") return;
+  P.planos[i][k] = el.value; escribirJson(); validar(); guardar("guion");
 });
-function pintarTiempos() {  // actualiza tiempos sin repintar (para no perder el foco)
-  let t = 0;
-  planos.forEach((p, i) => { const s = segDe(p), ini = t; t += s;
-    const el = document.querySelector(`#pl${i} .tiempo`); if (el) el.textContent = `~${fmt(ini)} – ${fmt(t)}`; });
-  $("timeline").innerHTML = planos.map((p, i) => `<div class="tl-foto_video" style="flex:${segDe(p)}" data-go="${i}">${i + 1}</div>`).join("");
-  $("totalInfo").textContent = `${planos.length} imágenes · ~${fmt(t)} (la duración real la marca tu audio)`;
-}
 $("planos").addEventListener("change", (e) => {
-  const el = e.target; const i = +el.dataset.i;
-  if (el.tagName !== "SELECT" || !planos[i]) return;
-  planos[i][el.dataset.k] = el.value; refrescar();
+  const el = e.target, i = +el.dataset.i;
+  if (el.tagName !== "SELECT" || !P.planos[i]) return;
+  P.planos[i][el.dataset.k] = el.value; refrescarEditor();
 });
 $("planos").addEventListener("click", (e) => {
   const c = e.target.closest("[data-ref]");
-  if (c) { const p = planos[+c.dataset.i]; const r = c.dataset.ref; p.refs = (p.refs || []).includes(r) ? p.refs.filter(x => x !== r) : [...(p.refs || []), r]; return refrescar(); }
+  if (c) { const p = P.planos[+c.dataset.i], r = c.dataset.ref; p.refs = (p.refs || []).includes(r) ? p.refs.filter(x => x !== r) : [...(p.refs || []), r]; return refrescarEditor(); }
   const mv = e.target.closest("[data-mv]");
-  if (mv) { const i = +mv.dataset.mv, j = i + +mv.dataset.d; if (j < 0 || j >= planos.length) return; [planos[i], planos[j]] = [planos[j], planos[i]]; return refrescar(); }
+  if (mv) { const i = +mv.dataset.mv, j = i + +mv.dataset.d; if (j < 0 || j >= P.planos.length) return; [P.planos[i], P.planos[j]] = [P.planos[j], P.planos[i]]; return refrescarEditor(); }
   const dup = e.target.closest("[data-dup]");
-  if (dup) { const i = +dup.dataset.dup; const c = JSON.parse(JSON.stringify(planos[i])); c.name = ""; planos.splice(i + 1, 0, c); return refrescar(); }
+  if (dup) { const i = +dup.dataset.dup, c2 = JSON.parse(JSON.stringify(P.planos[i])); c2.name = ""; P.planos.splice(i + 1, 0, c2); return refrescarEditor(); }
   const del = e.target.closest("[data-del-pl]");
-  if (del) { if (confirm("¿Borrar este plano?")) { planos.splice(+del.dataset.delPl, 1); refrescar(); } }
+  if (del && confirm("¿Borrar este plano del guion? (Su imagen sigue en la carpeta.)")) { P.planos.splice(+del.dataset.delPl, 1); refrescarEditor(); }
 });
-$("timeline").addEventListener("click", (e) => {
-  const d = e.target.closest("[data-go]"); if (d) $("pl" + d.dataset.go).scrollIntoView({behavior: "smooth", block: "center"});
-});
+$("timeline").addEventListener("click", (e) => { const d = e.target.closest("[data-goto]"); if (d) $("pl" + d.dataset.goto).scrollIntoView({behavior: "smooth", block: "center"}); });
 $("addPlano").onclick = () => {
-  planos.push({refs: ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: ""});
-  refrescar(); $("pl" + (planos.length - 1)).scrollIntoView({behavior: "smooth", block: "center"});
+  P.planos.push({name: "", refs: ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: ""});
+  refrescarEditor(); $("pl" + (P.planos.length - 1)).scrollIntoView({behavior: "smooth", block: "center"});
 };
+function importarJson(txt) {
+  let g; try { g = JSON.parse(txt); } catch (e) { $("errores").textContent = "El JSON no es válido: " + e.message; return false; }
+  if (Array.isArray(g)) g = {jobs: g};
+  P.planos = planosDesdeJobs(g.jobs || []);
+  refrescarEditor(); return true;
+}
+let pegarTimer = null;
 $("json").addEventListener("input", () => {
-  const err = importarTexto();
-  if (err.length) { $("errores").textContent = err.join("\n"); return; }
-  pintarPlanos(); validar(); guardarLocal();
+  clearTimeout(pegarTimer);
+  pegarTimer = setTimeout(() => { if ($("json").value.trim()) importarJson($("json").value); }, 500);
 });
 $("copiarJson").onclick = async () => { try { await navigator.clipboard.writeText($("json").value); toast("JSON copiado."); } catch { toast("No se pudo copiar."); } };
-for (const id of ["proyecto","imgModel","ratio"]) $(id).addEventListener("change", () => { escribirJson(); });
 $("cargar").onclick = () => $("jsonFile").click();
-$("jsonFile").onchange = async () => {
-  const f = $("jsonFile").files[0]; $("jsonFile").value = ""; if (!f) return;
-  $("json").value = await f.text(); $("proyecto").value = "";
-  const err = importarTexto(); if (err.length) { $("errores").textContent = err.join("\n"); return; }
-  refrescar();
-};
+$("jsonFile").onchange = async () => { const f = $("jsonFile").files[0]; $("jsonFile").value = ""; if (f && importarJson(await f.text())) toast("Guion cargado."); };
 $("ejemplo").onclick = () => {
-  $("proyecto").value = "prueba_web";
-  planos = [
-    {refs: ["mackenzie", "cabina"], efecto: "", texto: "Son las seis de la mañana y ya estoy en la cabina.",
+  if (P.planos.length && !confirm("¿Sustituir los planos actuales por el ejemplo?")) return;
+  P.planos = [
+    {name: "", refs: ["mackenzie", "cabina"], efecto: "", texto: "Son las seis de la mañana y ya estoy en la cabina.",
      img: "La mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia, estirándose con una taza de café en la mano. Luz suave de amanecer por el parabrisas. Plano medio lateral, cámara fija, foto realista."},
-    {refs: ["camion"], efecto: "", texto: "Fuera todavía está oscuro y el aparcamiento está en silencio.",
-     img: "El camión de la referencia aparcado en un área de servicio al amanecer, cielo azul oscuro con las primeras luces. Plano general, cámara fija, foto realista."}
-  ];
-  refrescar();
+    {name: "", refs: ["camion"], efecto: "", texto: "Fuera todavía está oscuro y el aparcamiento está en silencio.",
+     img: "El camión de la referencia aparcado en un área de servicio al amanecer, cielo azul oscuro con las primeras luces. Plano general, cámara fija, foto realista."}];
+  refrescarEditor();
 };
 
-/* ---------- Ejecutar ---------- */
-$("empezar").onclick = async () => {
-  const {guion, errores} = validar();
-  if (!guion || errores.length) return toast("Revisa el guion antes de empezar.");
-  const cuentas = cuentasMarcadas();
-  if (!cuentas.length) return toast("Elige al menos una cuenta.");
-  guion.project = $("proyecto").value.trim() || guion.project;
-  guion.defaults = {...(guion.defaults || {}), ratio: $("ratio").value, image_model: $("imgModel").value.trim()};
-  try { await api("/api/start", {guion, cuentas}); toast("En marcha. Se abrirá una ventana de Chrome por cuenta."); cargarProyectos(guion.project); poll(); }
-  catch (e) { toast(e.message, 6000); }
-};
-$("parar").onclick = async () => { if (confirm("¿Parar el trabajo? Lo que esté generándose en Flow seguirá allí.")) await api("/api/stop", {}); };
-
-let ultimoEstado = null;
+/* ---------- Estado (polling) ---------- */
 async function poll() {
   clearTimeout(pollTimer);
-  let s; try { s = await api("/api/estado"); } catch { pollTimer = setTimeout(poll, 3000); return; }
-  ultimoEstado = s;
-  pintarEstado(s);
-  pintarMontaje(s);
-  if (s.running || (s.render && s.render.running)) pollTimer = setTimeout(poll, 2000);
+  if (!P) return;
+  const name = P.name;
+  try {
+    const s = await api(`/api/proyecto?name=${encodeURIComponent(name)}`);
+    if (!P || P.name !== name) return;
+    P.estado = s; pintarEstado(s);
+  } catch {}
+  if (P && P.name === name) pollTimer = setTimeout(poll, (P.estado.gen.running || P.estado.render.running) ? 2000 : 6000);
 }
-function cuentasMarcadas() { return [...document.querySelectorAll("#cuentas input:checked")].map(i => i.value); }
-
+let galeriaFirma = "", editorPendiente = false;
+document.addEventListener("focusout", () => setTimeout(() => {
+  if (editorPendiente && P && !$("planos").contains(document.activeElement)) { editorPendiente = false; pintarPlanos(); }
+}, 50));
 function pintarEstado(s) {
+  const g = s.gen, r = s.render, m = s.media || {};
   const b = $("estado");
-  if (s.running) { b.className = "badge run"; b.textContent = "generando…"; }
-  else if (s.render && s.render.running) { b.className = "badge run"; b.textContent = s.render.mode === "render" ? "renderizando…" : "calculando tiempos…"; }
-  else if (s.finished) {
-    const ok = s.planos.every(p => p.estado === "hecho");
-    b.className = "badge " + (ok ? "ok" : "err"); b.textContent = ok ? "imágenes listas" : "terminado con errores";
-  } else { b.className = "badge"; b.textContent = s.project ? "listo" : "sin proyecto"; }
-  $("empezar").disabled = s.running; $("parar").hidden = !s.running;
-  if (!s.project) { $("progreso").hidden = true; $("montaje").hidden = true; return; }
-  $("proyectoInfo").textContent = `Abierto: ${s.project}`;
-  $("progreso").hidden = false; $("montaje").hidden = false;
-  const hechos = s.planos.filter(p => p.estado === "hecho").length;
-  $("progresoInfo").textContent = `${hechos}/${s.planos.length} imágenes`;
-  $("links").innerHTML = Object.entries(s.links).map(([c, u]) => `<p>Proyecto de <b>${esc(c)}</b> en Flow: <a href="${esc(u)}" target="_blank" rel="noopener">abrir</a></p>`).join("");
-  $("filas").innerHTML = s.planos.map(p => `<div class="foto">
-      <div class="img">${p.thumb ? `<img src="${esc(p.thumb)}" data-zoom="${esc(p.thumb)}" alt="" loading="lazy">` : (p.estado === "generando" ? "generando…" : "sin imagen")}</div>
-      <div class="pie">
-        <div class="l1"><b>${esc(p.name)}</b><span class="chip ${p.estado.replace(" ", "-")}">${esc(p.estado)}</span></div>
-        ${p.estado === "error" ? `<div class="err">${esc(p.detalle)}</div>` : ""}
-        <div class="l1"><span class="muted">${esc(p.cuenta || "")}</span>
-          <button class="mini" data-rehacer="${esc(p.name)}" ${s.running ? "disabled" : ""} title="Regenerar solo esta imagen">↻ Rehacer</button></div>
-      </div></div>`).join("");
+  if (g.running) { b.className = "badge run"; b.textContent = "generando imágenes…"; }
+  else if (r.running) { b.className = "badge run"; b.textContent = r.mode === "render" ? "renderizando…" : "calculando tiempos…"; }
+  else if (m.video) { b.className = "badge ok"; b.textContent = "vídeo listo"; }
+  else { b.className = "badge"; b.textContent = "en edición"; }
+  // imágenes
+  const hechas = s.planos.filter(p => p.thumb).length;
+  $("imgInfo").textContent = `${hechas}/${s.planos.length} imágenes`;
+  $("links").innerHTML = Object.entries(g.links || {}).map(([c, u]) => `<p class="faint">Proyecto de <b>${esc(c)}</b> en Flow: <a href="${esc(u)}" target="_blank" rel="noopener">abrir</a></p>`).join("");
+  const firma = JSON.stringify(s.planos.map(p => [p.name, p.estado, p.thumb, p.cuenta, p.detalle])) + g.running;
+  if (firma !== galeriaFirma) {
+    galeriaFirma = firma;
+    $("galeria").innerHTML = s.planos.length ? s.planos.map(p => {
+      const pl = P.planos.find(x => x.name === p.name);
+      return `<div class="foto">
+        <div class="img">${p.thumb ? `<img src="${esc(p.thumb)}" data-zoom="${esc(p.thumb)}" alt="" loading="lazy">` : (p.estado === "generando" ? "generando…" : "sin imagen")}</div>
+        <div class="pie">
+          <div class="l1"><b>${esc(p.name)}</b><span class="chip ${esc(p.estado.replace(" ", "-"))}">${esc(p.estado)}</span></div>
+          ${pl && pl.texto ? `<div class="txt">${esc(pl.texto)}</div>` : ""}
+          ${p.estado === "error" ? `<div class="err">${esc(p.detalle)}</div>` : ""}
+          <div class="l1"><span class="faint">${esc(p.cuenta || "")}</span>
+            <button class="mini" data-rehacer="${esc(p.name)}" ${g.running || g.otro ? "disabled" : ""}>↻ Rehacer</button></div>
+        </div></div>`;
+    }).join("") : `<div class="empty" style="grid-column:1/-1">Añade planos en el paso 1.</div>`;
+    // miniaturas en el editor; si estás escribiendo en un plano, se espera a que salgas
+    if ($("planos").contains(document.activeElement)) editorPendiente = true; else pintarPlanos();
+  }
   const log = $("log"); const abajo = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-  log.textContent = s.log.join("\n"); if (abajo) log.scrollTop = log.scrollHeight;
+  log.textContent = (g.log || []).join("\n"); if (abajo) log.scrollTop = log.scrollHeight;
+  $("genFaltan").disabled = g.running || !!g.otro || !s.planos.length;
+  $("genTodas").disabled = g.running || !!g.otro || !s.planos.length;
+  $("parar").hidden = !g.running;
+  $("otroGen").hidden = !g.otro; $("otroGen").textContent = g.otro ? `Ahora mismo se están generando imágenes de «${g.otro}». Espera a que termine.` : "";
+  // audio y render
+  pintarAudio(s);
+  pintarRender(s);
+  pintarResumen();
+}
+function pintarResumen() {
+  if (!P) return;
+  const s = P.estado || {planos: [], media: {}, gen: {}, render: {}};
+  const n = P.planos.length, hechas = (s.planos || []).filter(p => p.thumb).length, m = s.media || {};
+  $("sGuion").textContent = n ? `${n} planos` : "vacío";
+  $("sImg").textContent = n ? `${hechas}/${n}` : "—";
+  $("sAudio").textContent = m.narracion ? (m.musica ? "voz + música" : "voz") : "sin voz";
+  $("sRender").textContent = m.video ? "listo" : "—";
+  const st = document.querySelectorAll(".step");
+  st[0].classList.toggle("done", n > 0); st[1].classList.toggle("done", n > 0 && hechas === n);
+  st[2].classList.toggle("done", !!m.tiempos); st[3].classList.toggle("done", !!m.video);
 }
 
-$("filas").addEventListener("click", async (e) => {
+/* ---------- Generar / rehacer ---------- */
+async function generar(soloFaltan) {
+  const errs = validar(); if (errs.length) { irTab("guion"); return toast("Revisa el guion antes de generar."); }
+  const cuentas = cuentasMarcadas(); if (!cuentas.length) return toast("Elige al menos una cuenta.");
+  if (!soloFaltan && P.estado.planos.some(p => p.thumb) && !confirm("¿Regenerar TODAS las imágenes? Las actuales se sustituyen.")) return;
+  await guardarYa();
+  try { await api("/api/generar", {name: P.name, cuentas, solo_faltan: soloFaltan}); toast("En marcha: se abrirá una ventana de Chrome por cuenta."); poll(); }
+  catch (e) { toast(e.message, 6000); }
+}
+$("genFaltan").onclick = () => generar(true);
+$("genTodas").onclick = () => generar(false);
+$("parar").onclick = async () => { if (confirm("¿Parar la generación?")) { await api("/api/parar", {name: P.name}); poll(); } };
+$("galeria").addEventListener("click", async (e) => {
   const z = e.target.closest("[data-zoom]");
   if (z) { $("lightboxImg").src = z.dataset.zoom; $("lightbox").style.display = "grid"; return; }
   const r = e.target.closest("[data-rehacer]"); if (!r) return;
-  const name = r.dataset.rehacer;
-  // Si el editor tiene este plano (mismo proyecto), se usa su prompt actual.
-  const mismo = ultimoEstado && ultimoEstado.project === ($("proyecto").value.trim() || ultimoEstado.project);
-  const p = mismo ? planos.find(x => x.name === name) : null;
-  const job = p ? {prompt: p.img, refs: p.refs || [], texto: p.texto || "", ...(p.efecto ? {efecto: p.efecto} : {})} : null;
-  if (!confirm(`¿Rehacer ${name}?${job ? " Se usará el prompt que tiene ahora en el editor." : ""} Las demás imágenes no se tocan.`)) return;
-  try { await api("/api/rehacer", {name, job, cuentas: cuentasMarcadas()}); toast(`Rehaciendo ${name}…`); poll(); }
+  const plano = r.dataset.rehacer;
+  if (!confirm(`¿Rehacer ${plano}? Se usa el prompt que tiene ahora en el guion. Las demás imágenes no se tocan.`)) return;
+  await guardarYa();
+  try { await api("/api/rehacer", {name: P.name, plano, job: null, cuentas: cuentasMarcadas()}); toast(`Rehaciendo ${plano}…`); poll(); }
   catch (err) { toast(err.message, 6000); }
 });
 $("lightbox").onclick = () => { $("lightbox").style.display = "none"; };
 
-/* ---------- Proyectos ---------- */
-async function cargarProyectos(seleccion) {
-  const {proyectos} = await api("/api/proyectos");
-  $("proyectos").innerHTML = proyectos.length
-    ? proyectos.map(n => `<option ${n === seleccion ? "selected" : ""}>${esc(n)}</option>`).join("")
-    : `<option value="">(no hay proyectos)</option>`;
-}
-$("abrir").onclick = async () => {
-  const project = $("proyectos").value; if (!project) return;
-  try {
-    await api("/api/abrir", {project});
-    // Cargar su guion en el editor
-    const r = await fetch(`/outputs/${encodeURIComponent(project)}/guion.json?t=${Date.now()}`);
-    if (r.ok) {
-      const g = await r.json(); delete g.references;
-      $("json").value = JSON.stringify(g, null, 2); $("proyecto").value = project;
-      importarTexto(); refrescar();
-    }
-    toast(`Proyecto «${project}» abierto.`); parar(); poll();
-  } catch (e) { toast(e.message, 6000); }
-};
-
-/* ---------- Narración ---------- */
-$("subirAudio").onclick = () => $("audioFile").click();
-$("audioFile").onchange = async () => {
-  const f = $("audioFile").files[0]; $("audioFile").value = ""; if (!f) return;
-  if (f.size > 60 * 1024 * 1024) return toast("El audio es muy grande (máx. 60 MB).");
-  toast("Subiendo narración…");
-  const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.readAsDataURL(f); });
-  try { await api("/api/narracion", {filename: f.name, data}); toast("Narración guardada. Pulsa «Calcular tiempos» para la vista previa."); parar(); poll(); }
+/* ---------- Audio ---------- */
+async function subirAudio(input, ruta, que) {
+  const f = input.files[0]; input.value = ""; if (!f) return;
+  if (f.size > 80 * 1024 * 1024) return toast("El archivo es muy grande (máx. 80 MB).");
+  toast(`Subiendo ${que}…`);
+  try { await api(ruta, {name: P.name, filename: f.name, data: await leerArchivo(f)}); toast(`${que[0].toUpperCase() + que.slice(1)} guardada.`); previa = null; poll(); }
   catch (e) { toast(e.message, 6000); }
-};
-$("calcTiempos").onclick = async () => {
-  try { await api("/api/tiempos", {transicion: $("transicion").value}); poll(); } catch (e) { toast(e.message, 6000); }
-};
-$("render").onclick = async () => {
-  try { await api("/api/render", {transicion: $("transicion").value}); toast("Renderizando…"); poll(); } catch (e) { toast(e.message, 6000); }
-};
-$("renderStop").onclick = async () => { await api("/api/render/stop", {}); poll(); };
+}
+$("subirVoz").onclick = () => $("vozFile").click();
+$("vozFile").onchange = () => subirAudio($("vozFile"), "/api/narracion", "narración");
+$("subirMus").onclick = () => $("musFile").click();
+$("musFile").onchange = () => subirAudio($("musFile"), "/api/musica", "música");
+$("quitarMus").onclick = async () => { if (!confirm("¿Quitar la música de fondo de este proyecto?")) return; await api("/api/musica/borrar", {name: P.name}); previa = null; poll(); };
+$("calcTiempos").onclick = async () => { await guardarYa(); try { await api("/api/tiempos", {name: P.name}); poll(); } catch (e) { toast(e.message, 6000); } };
 
-/* ---------- Vista previa: imita el render (mismos efectos y fundido) ---------- */
-let previa = null;   // {planos, fundido, audioUrl}
-const ZOOM = 0.10;
+function pintarAudio(s) {
+  const m = s.media || {}, r = s.render;
+  $("vozNombre").textContent = m.narracion ? m.narracion.name : "Sin narración";
+  $("musNombre").textContent = m.musica ? m.musica.name : "Sin música";
+  $("quitarMus").hidden = !m.musica;
+  $("calcTiempos").disabled = !m.narracion || r.running || !!r.otro;
+  $("calcTiempos").textContent = r.running && r.mode === "tiempos" ? "Calculando…" : "Calcular tiempos";
+  // fuentes de audio
+  if (m.narracion && !$("voz").src.endsWith(m.narracion.url)) { $("voz").src = m.narracion.url; }
+  if (!m.narracion && $("voz").getAttribute("src")) { $("voz").removeAttribute("src"); $("voz").load(); }
+  if (m.musica && !$("mus").src.endsWith(m.musica.url)) $("mus").src = m.musica.url;
+  if (!m.musica && $("mus").getAttribute("src")) { $("mus").pause(); $("mus").removeAttribute("src"); $("mus").load(); }
+  // vista previa
+  if (m.tiempos && m.narracion) {
+    const firma = JSON.stringify([m.narracion.url, m.tiempos.planos.map(p => [p.name, p.t0, p.url, p.efecto])]);
+    if (!previa || previa.firma !== firma) {
+      previa = {firma, planos: m.tiempos.planos, fundido: m.tiempos.fundido || 0, voz: m.tiempos.voz || [], dur: m.tiempos.duracion};
+      $("layA").dataset.src = ""; $("layB").dataset.src = "";
+      pintarFrame();
+    }
+    $("stageVacio").hidden = true; $("play").disabled = false; $("seek").disabled = false;
+    $("previaInfo").textContent = `${m.tiempos.planos.length} imágenes · ${fmt(m.tiempos.duracion)}`;
+  } else {
+    previa = null; $("stageVacio").hidden = false; $("play").disabled = true; $("seek").disabled = true;
+    $("layA").style.opacity = 0; $("layB").style.opacity = 0; $("stageCap").textContent = "";
+    $("stageVacio").textContent = m.narracion ? "Pulsa «Calcular tiempos» para ver la vista previa." : "Sube la narración y pulsa «Calcular tiempos» para ver aquí el vídeo con tu voz.";
+    $("previaInfo").textContent = "";
+  }
+}
+
+/* Vista previa: mismos movimientos, fundidos y ducking que el render */
+let previa = null;
+const ZOOM = 0.10, DUCK = {no: 0, suave: -6, media: -10, fuerte: -16}, ATT = 0.25, REL = 0.45;
 function motionCss(efecto, t) {
-  const e = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(Math.max(t, 0), 1));
-  const m = ZOOM / 2 * 100;      // desplazamiento máx. en % con zoom 1,1
+  const e = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(Math.max(t, 0), 1)), m = ZOOM / 2 * 100;
   switch (efecto) {
     case "zoom_out":  return `scale(${1 + ZOOM - ZOOM * e})`;
     case "paneo_der": return `translateX(${m - 2 * m * e}%) scale(${1 + ZOOM})`;
@@ -609,71 +888,98 @@ function motionCss(efecto, t) {
     default:          return `scale(${1 + ZOOM * e})`;
   }
 }
+function volMusica(t) {
+  const base = Math.pow(10, (+$("musDb").value) / 20);
+  const d = DUCK[$("ducking").value] || 0;
+  let duck = 0;
+  if (d && previa) for (const [a, b] of previa.voz) {
+    if (t < a - ATT) break;
+    duck = Math.max(duck, Math.min(Math.max(Math.min((t - (a - ATT)) / ATT, ((b + REL) - t) / REL), 0), 1));
+  }
+  const dur = previa ? previa.dur : 0, fadeOut = Math.min(2.5, dur / 4);
+  const fades = Math.min(1, t / 0.8, dur ? Math.max(0, (dur - t) / fadeOut) : 1);
+  return Math.min(1, base * (1 - (1 - Math.pow(10, d / 20)) * duck) * fades);
+}
 function pintarFrame() {
   if (!previa) return;
-  const t = $("audio").currentTime, P = previa.planos, F = previa.fundido;
-  let i = P.findIndex((p, k) => t < p.t1 || k === P.length - 1); if (i < 0) i = 0;
-  const cur = P[i], prev = i > 0 ? P[i - 1] : null;
-  const dur = (p, k) => Math.max(p.t1 - p.t0, 0.3) + (k < P.length - 1 ? F : 0);
+  const v = $("voz"), t = v.currentTime, L = previa.planos, F = previa.fundido;
+  let i = L.findIndex((p, k) => t < p.t1 || k === L.length - 1); if (i < 0) i = 0;
+  const cur = L[i], prev = i > 0 ? L[i - 1] : null;
+  const dur = (p, k) => Math.max(p.t1 - p.t0, 0.3) + (k < L.length - 1 ? F : 0);
   const A = $("layA"), B = $("layB");
-  // Durante el fundido: la anterior (A) debajo, la actual (B) entrando.
+  const pon = (el, p) => { if (el.dataset.src !== (p.url || "")) { el.src = p.url || ""; el.dataset.src = p.url || ""; } };
   if (prev && F > 0 && t < cur.t0 + F) {
-    if (A.dataset.src !== prev.url) { A.src = prev.url || ""; A.dataset.src = prev.url; }
-    A.style.transform = motionCss(prev.efecto, (t - prev.t0) / dur(prev, i - 1)); A.style.opacity = 1;
-    if (B.dataset.src !== cur.url) { B.src = cur.url || ""; B.dataset.src = cur.url; }
-    B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = Math.max(0, (t - cur.t0) / F);
+    pon(A, prev); A.style.transform = motionCss(prev.efecto, (t - prev.t0) / dur(prev, i - 1)); A.style.opacity = 1;
+    pon(B, cur); B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = Math.max(0, (t - cur.t0) / F);
   } else {
-    if (B.dataset.src !== cur.url) { B.src = cur.url || ""; B.dataset.src = cur.url; }
-    B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = 1;
-    A.style.opacity = 0;
+    pon(B, cur); B.style.transform = motionCss(cur.efecto, (t - cur.t0) / dur(cur, i)); B.style.opacity = 1; A.style.opacity = 0;
   }
   $("stageCap").textContent = cur.texto || "";
-  $("stagePlano").textContent = `${cur.name} · ${cur.t0.toFixed(1)}–${cur.t1.toFixed(1)} s · ${cur.efecto}${cur.url ? "" : " · FALTA la imagen"}`;
+  $("stagePlano").textContent = `${cur.name} · ${cur.t0.toFixed(1)}–${cur.t1.toFixed(1)} s · ${EFECTOS[cur.efecto] || cur.efecto}${cur.url ? "" : " · FALTA la imagen"}`;
+  const total = previa.dur || v.duration || 0;
+  $("tc").textContent = `${fmt(t)} / ${fmt(total)}`;
+  if (!seeking && total) $("seek").value = Math.round(t / total * 1000);
+  if ($("mus").getAttribute("src")) $("mus").volume = volMusica(t);
 }
-(function bucle() { if (previa && !$("audio").paused) pintarFrame(); requestAnimationFrame(bucle); })();
-$("audio").addEventListener("seeked", pintarFrame);
-$("audio").addEventListener("loadedmetadata", pintarFrame);
+function syncMusica() {
+  const mu = $("mus"), v = $("voz");
+  if (!mu.getAttribute("src") || !mu.duration) return;
+  mu.currentTime = v.currentTime % mu.duration;
+}
+(function bucle() { if (previa && !$("voz").paused) pintarFrame(); requestAnimationFrame(bucle); })();
+$("play").onclick = async () => {
+  const v = $("voz"), mu = $("mus");
+  if (v.paused) { syncMusica(); try { await v.play(); if (mu.getAttribute("src")) { mu.volume = volMusica(v.currentTime); mu.play(); } } catch {} }
+  else pausarPrevia();
+};
+$("voz").addEventListener("play", () => { $("play").textContent = "❚❚"; });
+$("voz").addEventListener("pause", () => { $("play").textContent = "▶"; $("mus").pause(); });
+$("voz").addEventListener("ended", () => { $("mus").pause(); });
+$("voz").addEventListener("loadedmetadata", pintarFrame);
+let seeking = false;
+$("seek").addEventListener("input", () => {
+  seeking = true;
+  const total = previa ? previa.dur : $("voz").duration; if (!total) return;
+  $("voz").currentTime = $("seek").value / 1000 * total; pintarFrame();
+});
+$("seek").addEventListener("change", () => { seeking = false; syncMusica(); });
+$("voz").addEventListener("seeked", () => { pintarFrame(); syncMusica(); });
+function pausarPrevia() { try { $("voz").pause(); $("mus").pause(); } catch {} }
+function detenerPrevia() { pausarPrevia(); }
+for (const id of ["musDb", "ducking"]) $(id).addEventListener("input", () => { if (previa) pintarFrame(); });
 
-function pintarMontaje(s) {
-  const m = s.media || {}, r = s.render || {};
-  $("audioNombre").textContent = m.narracion ? m.narracion.name : "Sin narración";
-  const busy = r.running || s.running;
-  $("calcTiempos").disabled = !m.narracion || busy;
-  $("render").disabled = !m.narracion || busy;
+/* ---------- Render ---------- */
+function pintarRender(s) {
+  const m = s.media || {}, r = s.render;
+  const hechas = s.planos.filter(p => p.thumb).length;
+  const items = [
+    [s.planos.length > 0 && hechas === s.planos.length, `Imágenes: ${hechas}/${s.planos.length}`],
+    [!!m.narracion, m.narracion ? "Narración subida" : "Falta la narración (paso 3)"],
+    [true, m.musica ? `Música: ${m.musica.name} · ${$("musDb").value} dB · ducking ${$("ducking").value}` : "Sin música de fondo (opcional)"],
+  ];
+  $("checklist").innerHTML = items.map(([ok, t]) => `<li style="color:${ok ? "var(--muted)" : "var(--accent)"}">${ok ? "✓" : "•"} ${esc(t)}</li>`).join("");
+  $("render").disabled = !m.narracion || r.running || !!r.otro || s.gen.running;
+  $("render").textContent = r.running && r.mode === "render" ? "Renderizando…" : (m.video ? "Volver a renderizar" : "Render");
   $("renderStop").hidden = !r.running;
-  // log del render/tiempos
   const log = $("renderLog");
-  log.hidden = !(r.running || (r.exit_code && r.exit_code !== 0)) || r.project !== s.project;
-  if (!log.hidden) { log.textContent = (r.log || []).join("\n"); log.scrollTop = log.scrollHeight; }
-  if (r.running) $("montajeInfo").textContent = r.mode === "render" ? "renderizando…" : "calculando tiempos…";
-  else if (r.exit_code && r.project === s.project) $("montajeInfo").textContent = "falló: mira el registro";
-  else $("montajeInfo").textContent = m.tiempos ? `${m.tiempos.planos.length} imágenes · ${m.tiempos.duracion.toFixed(1)} s` : "";
-  // vista previa
-  if (m.tiempos && m.narracion) {
-    const firma = JSON.stringify([m.narracion.url, m.tiempos.planos.map(p => [p.name, p.t0, p.url, p.efecto])]);
-    if (!previa || previa.firma !== firma) {
-      previa = {firma, planos: m.tiempos.planos, fundido: m.tiempos.fundido || 0};
-      if (!$("audio").src.endsWith(m.narracion.url)) $("audio").src = m.narracion.url;
-      $("layA").dataset.src = ""; $("layB").dataset.src = "";
-      pintarFrame();
-    }
-    $("previa").hidden = false;
-  } else {
-    $("previa").hidden = true; previa = null;
-    if (m.narracion && !$("audio").src.endsWith(m.narracion.url)) $("audio").src = m.narracion.url;
-  }
-  // resultado
+  const mostrar = r.running || (r.exit_code && r.exit_code !== 0);
+  log.hidden = !mostrar;
+  if (mostrar) { log.textContent = (r.log || []).join("\n"); log.scrollTop = log.scrollHeight; }
+  $("renderInfo").textContent = r.running ? (r.mode === "render" ? "renderizando…" : "calculando tiempos…")
+    : (r.exit_code ? "falló: mira el registro" : (r.otro ? `render en marcha en «${r.otro}»` : ""));
   if (m.video) {
-    $("resultado").hidden = false;
+    $("resultado").hidden = false; $("sinVideo").hidden = true;
     if (!$("video").src.endsWith(m.video)) $("video").src = m.video;
     $("dlVideo").href = m.video; $("dlSrt").href = m.srt || "#"; $("dlSrt").hidden = !m.srt;
-  } else $("resultado").hidden = true;
+  } else { $("resultado").hidden = true; $("sinVideo").hidden = false; }
 }
-function parar() { try { $("audio").pause(); } catch {} }
+$("render").onclick = async () => {
+  await guardarYa();
+  try { await api("/api/render", {name: P.name}); toast("Renderizando…"); poll(); } catch (e) { toast(e.message, 6000); }
+};
+$("renderStop").onclick = async () => { await api("/api/render/parar", {name: P.name}); poll(); };
 
-cargarLocal();
-importarTexto();
-cargarRefs().then(() => { pintarPlanos(); validar(); }); cargarCuentas(); cargarProyectos(); poll();
+enrutar();
 </script>
 </body>
 </html>

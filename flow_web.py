@@ -3,14 +3,14 @@ flow_web.py - Web local de flow-mackenzie.
 
   python flow_web.py            -> abre http://localhost:8765 en tu navegador
 
-Desde la web:
-  - Referencias (mackenzie, cabina, camión…): subir, cambiar y borrar (carpeta refs/).
-  - Cuentas de Flow: añadir (abre Chrome para iniciar sesión) y borrar.
-  - Guion: pegar/cargar el JSON y editar cada plano (solo imágenes).
-  - Generar las imágenes en Flow, ver el progreso y REHACER una sola imagen.
-  - Abrir un proyecto anterior desde outputs/.
-  - Subir la narración, ver la VISTA PREVIA sincronizada y lanzar el RENDER (montaje.py).
+Inicio: proyectos (crear, abrir, duplicar, borrar), referencias y cuentas de Flow.
+Cada proyecto, por pasos:
+  1. Guion     - planos (foto + voz en off), se guarda solo mientras editas.
+  2. Imágenes  - generar en Flow, galería, rehacer una sola imagen.
+  3. Audio     - narración, música de fondo con ducking y vista previa.
+  4. Render    - montaje.py -> montaje.mp4 + montaje.srt.
 
+Todo se guarda en outputs/<proyecto>/ (guion.json, ajustes.json, imágenes, audio).
 Solo escucha en 127.0.0.1 (tu PC). Usa solo librería estándar.
 """
 import base64
@@ -27,7 +27,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import flow_multi
 
@@ -40,13 +40,17 @@ IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 SUBPROC_ENV = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
 NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": "fundido",
+               "musica_db": -14, "ducking": "media"}
+# Archivos que no se copian al duplicar un proyecto
+NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
 
 
 def _safe_name(s: str) -> str:
     return "".join(c for c in str(s) if c.isalnum() or c in "_-") or "sin_nombre"
 
 
-def _project_dir(project: str) -> Path:
+def _pdir(project: str) -> Path:
     return OUT_DIR / _safe_name(project)
 
 
@@ -55,17 +59,29 @@ def _url(path: Path) -> str:
     return f"/outputs/{path.relative_to(OUT_DIR).as_posix()}?v={int(path.stat().st_mtime)}"
 
 
-def find_image(proj_dir: Path, name: str) -> Path | None:
+def _read_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def _write_json(path: Path, data) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)        # escritura atómica: nunca queda un archivo a medias
+
+
+def find_image(pdir: Path, name: str) -> Path | None:
     """La imagen más reciente de un plano (puede estar en cualquier carpeta de cuenta)."""
     hits = []
     for ext in IMG_EXT:
-        hits += [h for h in proj_dir.rglob(f"{name}{ext}")
-                 if "_debug" not in h.parts and "_montaje_tmp" not in h.parts]
+        hits += [h for h in pdir.rglob(f"{name}{ext}") if not (set(h.parts) & NO_COPIAR)]
     return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
 
 
-def find_narration(proj_dir: Path) -> Path | None:
-    hits = [p for p in proj_dir.glob("narracion.*") if p.suffix.lower() in AUDIO_EXT]
+def find_audio(pdir: Path, stem: str) -> Path | None:
+    hits = [p for p in pdir.glob(f"{stem}.*") if p.suffix.lower() in AUDIO_EXT]
     return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
 
 
@@ -80,131 +96,109 @@ def _rmtree(path: Path) -> None:
     shutil.rmtree(path, onerror=onerror)
 
 
+def load_guion(project: str) -> dict:
+    g = _read_json(_pdir(project) / "guion.json", {})
+    g.setdefault("project", _safe_name(project))
+    g.setdefault("jobs", [])
+    return g
+
+
+def load_ajustes(project: str) -> dict:
+    return {**AJUSTES_DEF, **_read_json(_pdir(project) / "ajustes.json", {})}
+
+
 # ---------------------------------------------------------------------------
-# Generación de imágenes (un proceso "flow.py multi" cada vez)
+# Generación de imágenes (un proceso "flow.py multi" cada vez, de un proyecto)
 # ---------------------------------------------------------------------------
 class Job:
     def __init__(self):
         self.lock = threading.Lock()
         self.proc: subprocess.Popen | None = None
-        self.log: list[str] = []
-        self.planos: dict[str, dict] = {}     # name -> {type, cuenta, estado, detalle, prompt}
-        self.order: list[str] = []
-        self.current: dict[str, str] = {}     # cuenta -> plano en curso
-        self.links: dict[str, str] = {}       # cuenta -> url proyecto Flow
         self.project = None
-        self.started = None
+        self.log: list[str] = []
+        self.planos: dict[str, dict] = {}     # name -> {cuenta, estado, detalle}
+        self.current: dict[str, str] = {}
+        self.links: dict[str, str] = {}
         self.finished = None
-        self.exit_code = None
 
     @property
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
 
-    # --- proyecto -----------------------------------------------------------
-    def _set_planos(self, jobs: list[dict], estado_fn) -> None:
-        self.planos, self.order = {}, []
-        for j in jobs:
-            if j.get("type", "image") != "image":
-                continue
-            self.planos[j["name"]] = {"type": "image", "cuenta": "", "estado": estado_fn(j),
-                                      "detalle": "", "prompt": j.get("prompt", "")}
-            self.order.append(j["name"])
+    def _reset(self, project: str) -> None:
+        if self.project != project:
+            self.project, self.log, self.planos, self.links = project, [], {}, {}
+        self.current, self.finished = {}, None
 
-    def open(self, project: str) -> None:
+    def start(self, project: str, cuentas: list[str], solo_faltan: bool = False) -> None:
         if self.running:
-            raise RuntimeError("Espera a que termine la generación en marcha.")
-        proj_dir = _project_dir(project)
-        guion_path = proj_dir / "guion.json"
-        if not guion_path.exists():
-            raise RuntimeError(f"El proyecto {project} no tiene guion.json.")
-        guion = json.loads(guion_path.read_text(encoding="utf-8"))
-        with self.lock:
-            self.project = proj_dir.name
-            self.log, self.links, self.current = [], {}, {}
-            self.started = self.finished = self.exit_code = None
-            self._set_planos(guion.get("jobs", []),
-                             lambda j: "hecho" if find_image(proj_dir, j["name"]) else "pendiente")
-            for name, p in self.planos.items():
-                img = find_image(proj_dir, name)
-                if img and img.parent != proj_dir:
-                    p["cuenta"] = img.parent.name
-
-    def start(self, guion: dict, cuentas: list[str]) -> None:
-        if self.running:
-            raise RuntimeError("Ya hay un trabajo en marcha.")
-        project = _safe_name(guion.get("project") or f"guion_{datetime.now():%Y%m%d_%H%M}")
-        guion["project"] = project
+            raise RuntimeError(f"Ya se están generando imágenes del proyecto «{self.project}».")
+        guion = load_guion(project)
+        jobs = [j for j in guion["jobs"] if j.get("type", "image") == "image"]
+        if not jobs:
+            raise RuntimeError("El guion no tiene planos.")
+        if solo_faltan:
+            jobs = [j for j in jobs if not find_image(_pdir(project), j["name"])]
+            if not jobs:
+                raise RuntimeError("No falta ninguna imagen.")
         refs = _all_refs()
-        refs.update(guion.get("references") or {})
-        guion["references"] = refs
-        missing = sorted({r for j in guion.get("jobs", []) for r in (j.get("refs") or [])} - set(refs))
+        missing = sorted({r for j in jobs for r in (j.get("refs") or [])} - set(refs))
         if missing:
             raise RuntimeError("Faltan referencias: " + ", ".join(missing))
-
-        proj_dir = _project_dir(project)
-        proj_dir.mkdir(parents=True, exist_ok=True)
-        jobfile = proj_dir / "guion.json"
-        jobfile.write_text(json.dumps(guion, indent=2, ensure_ascii=False), encoding="utf-8")
-
+        aj = load_ajustes(project)
+        lote = {"project": _safe_name(project), "references": refs,
+                "defaults": {"ratio": aj["ratio"], "image_model": aj["image_model"]},
+                "jobs": [{**j, "count": 1} for j in jobs]}
+        pdir = _pdir(project)
+        jobfile = pdir / "_cuentas" / "_lote.json"
+        jobfile.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(jobfile, lote)
         with self.lock:
-            self.log, self.links, self.current = [], {}, {}
-            self.project = project
-            self.started = datetime.now().isoformat(timespec="seconds")
-            self.finished = self.exit_code = None
-            self._set_planos(guion.get("jobs", []), lambda j: "pendiente")
-            for g_idx, group in enumerate(flow_multi.group_jobs(guion.get("jobs", []))):
+            self._reset(project)
+            self.log, self.links = [], {}
+            self.planos = {}
+            for g_idx, group in enumerate(flow_multi.group_jobs(lote["jobs"])):
                 for j in group:
-                    if j["name"] in self.planos:
-                        self.planos[j["name"]]["cuenta"] = cuentas[g_idx % len(cuentas)]
+                    self.planos[j["name"]] = {"cuenta": cuentas[g_idx % len(cuentas)],
+                                              "estado": "pendiente", "detalle": ""}
         self._launch(jobfile, cuentas)
 
-    def rehacer(self, name: str, job_override: dict | None, cuentas: list[str]) -> None:
-        """Regenera SOLO una imagen. Actualiza su entrada en guion.json (si viene un
-        prompt/refs nuevos) y deja intactas las demás."""
+    def rehacer(self, project: str, name: str, job_override: dict | None, cuentas: list[str]) -> None:
+        """Regenera SOLO una imagen; las demás no se tocan."""
         if self.running:
-            raise RuntimeError("Espera a que termine la generación en marcha.")
-        if not self.project:
-            raise RuntimeError("Abre primero el proyecto.")
-        proj_dir = _project_dir(self.project)
-        guion_path = proj_dir / "guion.json"
-        guion = json.loads(guion_path.read_text(encoding="utf-8"))
-        job = next((j for j in guion.get("jobs", []) if j.get("name") == name), None)
+            raise RuntimeError(f"Espera: se están generando imágenes de «{self.project}».")
+        pdir = _pdir(project)
+        guion = load_guion(project)
+        job = next((j for j in guion["jobs"] if j.get("name") == name), None)
         if job is None:
             raise RuntimeError(f"No encuentro el plano {name} en el guion.")
         if job_override:
             for k in ("prompt", "refs", "texto", "efecto"):
                 if k in job_override:
                     job[k] = job_override[k]
-            guion_path.write_text(json.dumps(guion, indent=2, ensure_ascii=False), encoding="utf-8")
-
+            _write_json(pdir / "guion.json", guion)
         refs = _all_refs()
-        refs.update(guion.get("references") or {})
         missing = sorted(set(job.get("refs") or []) - set(refs))
         if missing:
             raise RuntimeError("Faltan referencias: " + ", ".join(missing))
-        cuenta = (self.planos.get(name, {}).get("cuenta") or "")
         accounts = flow_multi.list_accounts()
+        img = find_image(pdir, name)
+        cuenta = img.parent.name if img and img.parent != pdir else ""
         if cuenta not in accounts:
             cuenta = next((c for c in cuentas if c in accounts), None) or (accounts[0] if accounts else None)
         if not cuenta:
             raise RuntimeError("No hay ninguna cuenta con sesión.")
-
-        mini = {"project": self.project, "references": refs, "defaults": guion.get("defaults", {}),
+        aj = load_ajustes(project)
+        mini = {"project": _safe_name(project), "references": refs,
+                "defaults": {"ratio": aj["ratio"], "image_model": aj["image_model"]},
                 "jobs": [{**job, "count": 1}]}
-        mini_file = proj_dir / "_rehacer" / f"{_safe_name(name)}.json"
-        mini_file.parent.mkdir(exist_ok=True)
-        mini_file.write_text(json.dumps(mini, indent=2, ensure_ascii=False), encoding="utf-8")
-
+        mini_file = pdir / "_rehacer" / f"{_safe_name(name)}.json"
+        mini_file.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(mini_file, mini)
         with self.lock:
+            self._reset(project)
             self.log.append(f"===== Rehacer {name} con {cuenta} =====")
-            self.current = {}
-            self.started = datetime.now().isoformat(timespec="seconds")
-            self.finished = self.exit_code = None
-            p = self.planos.setdefault(name, {"type": "image"})
-            p.update(cuenta=cuenta, estado="pendiente", detalle="", prompt=job.get("prompt", ""))
-            if name not in self.order:
-                self.order.append(name)
+            self.planos[name] = {"cuenta": cuenta, "estado": "pendiente", "detalle": ""}
         self._launch(mini_file, [cuenta])
 
     def _launch(self, jobfile: Path, cuentas: list[str]) -> None:
@@ -223,48 +217,28 @@ class Job:
         for raw in proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip()
             with self.lock:
-                self.log.append(line)
-                if len(self.log) > 2000:
-                    self.log = self.log[-2000:]
+                self.log = (self.log + [line])[-2000:]
                 if m := self._RE_JOB.match(line):
                     self.current[m["c"]] = m["n"]
-                    if m["n"] in self.planos:
-                        self.planos[m["n"]].update(estado="generando", cuenta=m["c"])
+                    self.planos.setdefault(m["n"], {}).update(estado="generando", cuenta=m["c"])
                 elif m := self._RE_OK.match(line):
                     name = self.current.get(m["c"])
                     if name in self.planos:
                         self.planos[name].update(estado="hecho", detalle=m["f"])
                 elif m := self._RE_ERR.match(line):
-                    if m["n"] in self.planos:
-                        self.planos[m["n"]].update(estado="error", detalle=m["e"])
+                    self.planos.setdefault(m["n"], {}).update(estado="error", detalle=m["e"])
                 elif m := self._RE_URL.match(line):
                     self.links[m["c"]] = m["u"]
-        code = proc.wait()
+        proc.wait()
         with self.lock:
-            self.exit_code = code
             self.finished = datetime.now().isoformat(timespec="seconds")
             for p in self.planos.values():
-                if p["estado"] in ("pendiente", "generando"):
+                if p.get("estado") in ("pendiente", "generando"):
                     p["estado"] = "sin terminar"
 
     def stop(self) -> None:
         if self.running:
             self.proc.terminate()
-
-    def snapshot(self) -> dict:
-        with self.lock:
-            proj_dir = _project_dir(self.project) if self.project else None
-            planos = []
-            for name in self.order:
-                p = self.planos[name]
-                item = {"name": name, **p}
-                img = find_image(proj_dir, name) if proj_dir else None
-                if img:
-                    item["thumb"] = _url(img)
-                planos.append(item)
-            return {"running": self.running, "project": self.project, "started": self.started,
-                    "finished": self.finished, "exit_code": self.exit_code,
-                    "planos": planos, "links": self.links, "log": self.log[-300:]}
 
 
 JOB = Job()
@@ -286,21 +260,24 @@ class Render:
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, project: str, mode: str, transicion: str = "fundido") -> None:
+    def start(self, project: str, mode: str) -> None:
         if self.running:
-            raise RuntimeError("Ya hay un render o un cálculo de tiempos en marcha.")
-        proj_dir = _project_dir(project)
-        audio = find_narration(proj_dir)
-        if not audio:
-            raise RuntimeError("Sube primero la narración.")
-        if not (proj_dir / "guion.json").exists():
-            raise RuntimeError("El proyecto no tiene guion.json.")
-        cmd = [sys.executable, str(BASE_DIR / "montaje.py"), str(proj_dir), str(audio),
-               "--transicion", "corte" if transicion == "corte" else "fundido"]
+            raise RuntimeError(f"Ya hay un render en marcha («{self.project}»).")
+        pdir = _pdir(project)
+        voz = find_audio(pdir, "narracion")
+        if not voz:
+            raise RuntimeError("Sube primero la narración (paso 3).")
+        aj = load_ajustes(project)
+        cmd = [sys.executable, str(BASE_DIR / "montaje.py"), str(pdir), str(voz),
+               "--transicion", "corte" if aj["transicion"] == "corte" else "fundido"]
+        musica = find_audio(pdir, "musica")
+        if musica and mode == "render":
+            cmd += ["--musica", str(musica), "--musica-db", str(float(aj["musica_db"])),
+                    "--ducking", aj["ducking"] if aj["ducking"] in ("no", "suave", "media", "fuerte") else "media"]
         if mode == "tiempos":
             cmd.append("--solo-tiempos")
         with self.lock:
-            self.log, self.mode, self.project, self.exit_code = [], mode, proj_dir.name, None
+            self.log, self.mode, self.project, self.exit_code = [], mode, _safe_name(project), None
         self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=SUBPROC_ENV, creationflags=NEW_GROUP)
         threading.Thread(target=self._reader, args=(self.proc,), daemon=True).start()
@@ -308,8 +285,7 @@ class Render:
     def _reader(self, proc) -> None:
         for raw in proc.stdout:
             with self.lock:
-                self.log.append(raw.decode("utf-8", errors="replace").rstrip())
-                self.log = self.log[-500:]
+                self.log = (self.log + [raw.decode("utf-8", errors="replace").rstrip()])[-500:]
         code = proc.wait()
         with self.lock:
             self.exit_code = code
@@ -318,49 +294,117 @@ class Render:
         if self.running:
             self.proc.terminate()
 
-    def snapshot(self) -> dict:
-        with self.lock:
-            return {"running": self.running, "mode": self.mode, "project": self.project,
-                    "exit_code": self.exit_code, "log": self.log[-200:]}
-
 
 RENDER = Render()
 
 
-def project_media(project: str | None) -> dict:
-    """Narración, tiempos de la vista previa, vídeo y subtítulos de un proyecto."""
-    if not project:
-        return {}
-    proj_dir = _project_dir(project)
+# ---------------------------------------------------------------------------
+# Estado de un proyecto (desde disco + lo que esté en marcha)
+# ---------------------------------------------------------------------------
+def project_media(pdir: Path) -> dict:
     out = {}
-    audio = find_narration(proj_dir)
-    if audio:
-        out["narracion"] = {"url": _url(audio), "name": audio.name}
-    tiempos = proj_dir / "montaje_tiempos.json"
-    if tiempos.exists():
-        try:
-            t = json.loads(tiempos.read_text(encoding="utf-8"))
-            if audio and t.get("audio") == audio.name and tiempos.stat().st_mtime >= audio.stat().st_mtime:
-                for p in t.get("planos", []):
-                    img = proj_dir / p["imagen"] if p.get("imagen") else None
-                    p["url"] = _url(img) if img and img.exists() else None
-                out["tiempos"] = t
-        except Exception:
-            pass
-    video = proj_dir / "montaje.mp4"
+    voz = find_audio(pdir, "narracion")
+    if voz:
+        out["narracion"] = {"url": _url(voz), "name": voz.name}
+    mus = find_audio(pdir, "musica")
+    if mus:
+        out["musica"] = {"url": _url(mus), "name": mus.name}
+    t = _read_json(pdir / "montaje_tiempos.json", None)
+    tfile = pdir / "montaje_tiempos.json"
+    if t and voz and t.get("audio") == voz.name and tfile.stat().st_mtime >= voz.stat().st_mtime:
+        for p in t.get("planos", []):
+            img = pdir / p["imagen"] if p.get("imagen") else None
+            p["url"] = _url(img) if img and img.exists() else None
+        out["tiempos"] = t
+    video = pdir / "montaje.mp4"
     if video.exists():
         out["video"] = _url(video)
-    srt = proj_dir / "montaje.srt"
+    srt = pdir / "montaje.srt"
     if srt.exists():
         out["srt"] = _url(srt)
     return out
+
+
+def project_state(project: str, with_guion: bool = False) -> dict:
+    pdir = _pdir(project)
+    if not (pdir / "guion.json").exists():
+        raise RuntimeError(f"El proyecto «{project}» no existe.")
+    guion = load_guion(project)
+    live = JOB.project == pdir.name
+    planos = []
+    with JOB.lock:
+        for j in guion["jobs"]:
+            if j.get("type", "image") != "image":
+                continue
+            name = j["name"]
+            img = find_image(pdir, name)
+            item = {"name": name, "estado": "hecho" if img else "pendiente", "detalle": "",
+                    "cuenta": img.parent.name if img and img.parent != pdir else ""}
+            if live and name in JOB.planos:
+                item.update({k: v for k, v in JOB.planos[name].items() if v is not None})
+                if item["estado"] == "sin terminar" and img:
+                    item["estado"] = "hecho"
+            if img:
+                item["thumb"] = _url(img)
+            planos.append(item)
+        gen = {"running": JOB.running and live, "otro": JOB.project if JOB.running and not live else None,
+               "log": JOB.log[-300:] if live else [], "links": JOB.links if live else {},
+               "finished": JOB.finished if live else None}
+    with RENDER.lock:
+        rlive = RENDER.project == pdir.name
+        render = {"running": RENDER.running and rlive, "mode": RENDER.mode if rlive else None,
+                  "exit_code": RENDER.exit_code if rlive else None, "log": RENDER.log[-200:] if rlive else [],
+                  "otro": RENDER.project if RENDER.running and not rlive else None}
+    out = {"project": pdir.name, "planos": planos, "gen": gen, "render": render,
+           "media": project_media(pdir)}
+    if with_guion:
+        g = {k: v for k, v in guion.items() if k != "references"}
+        out["guion"] = g
+        out["ajustes"] = load_ajustes(project)
+    return out
+
+
+def list_projects() -> list[dict]:
+    items = []
+    if not OUT_DIR.exists():
+        return items
+    for d in OUT_DIR.iterdir():
+        g = d / "guion.json"
+        if not (d.is_dir() and g.exists()):
+            continue
+        guion = _read_json(g, {})
+        imgs = [j["name"] for j in guion.get("jobs", []) if j.get("type", "image") == "image"]
+        hechas = [find_image(d, n) for n in imgs]
+        primera = next((h for h in hechas if h), None)
+        mtimes = [p.stat().st_mtime for p in [g, d / "ajustes.json", d / "montaje.mp4"] if p.exists()]
+        items.append({"name": d.name, "planos": len(imgs), "imagenes": sum(1 for h in hechas if h),
+                      "thumb": _url(primera) if primera else None, "video": (d / "montaje.mp4").exists(),
+                      "narracion": bool(find_audio(d, "narracion")),
+                      "modificado": datetime.fromtimestamp(max(mtimes)).strftime("%d/%m/%Y %H:%M"),
+                      "_t": max(mtimes),
+                      "ocupado": (JOB.running and JOB.project == d.name) or (RENDER.running and RENDER.project == d.name)})
+    items.sort(key=lambda x: x["_t"], reverse=True)
+    return items
+
+
+def _nombre_libre(base: str) -> str:
+    base = _safe_name(base)
+    name, n = base, 2
+    while _pdir(name).exists():
+        name, n = f"{base}_{n}", n + 1
+    return name
+
+
+def _ocupado(project: str) -> bool:
+    p = _safe_name(project)
+    return (JOB.running and JOB.project == p) or (RENDER.running and RENDER.project == p)
 
 
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, *_):  # silencio en consola
+    def log_message(self, *_):
         pass
 
     def _json(self, data, code=200):
@@ -368,6 +412,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -384,9 +429,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.suffix.lower() == ".srt":
             ctype = "text/plain; charset=utf-8"
         start, end = 0, size - 1
-        rng = self.headers.get("Range")
-        m = re.match(r"bytes=(\d*)-(\d*)", rng or "")
-        if m and size:   # audio y vídeo necesitan rangos para poder saltar
+        m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
+        if m and size:
             if m.group(1):
                 start = int(m.group(1))
                 end = int(m.group(2)) if m.group(2) else size - 1
@@ -421,32 +465,27 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(n) or b"{}")
 
     def do_GET(self):
-        path = unquote(urlparse(self.path).path)
-        if path in ("/", "/index.html"):
-            return self._file(WEB_DIR / "index.html", WEB_DIR)
-        if path.startswith("/refs/"):
-            return self._file(REFS_DIR / path[len("/refs/"):], REFS_DIR)
-        if path.startswith("/outputs/"):
-            return self._file(OUT_DIR / path[len("/outputs/"):], OUT_DIR)
-        if path == "/api/cuentas":
-            return self._json({"cuentas": flow_multi.list_accounts()})
-        if path == "/api/refs":
-            refs = [{"name": p.stem, "file": p.name, "url": f"/refs/{p.name}?v={int(p.stat().st_mtime)}"}
-                    for p in sorted(REFS_DIR.glob("*")) if p.suffix.lower() in IMG_EXT]
-            return self._json({"refs": refs})
-        if path == "/api/proyectos":
-            items = []
-            if OUT_DIR.exists():
-                for d in OUT_DIR.iterdir():
-                    g = d / "guion.json"
-                    if d.is_dir() and g.exists():
-                        items.append((g.stat().st_mtime, d.name))
-            return self._json({"proyectos": [n for _, n in sorted(items, reverse=True)]})
-        if path == "/api/estado":
-            snap = JOB.snapshot()
-            snap["render"] = RENDER.snapshot()
-            snap["media"] = project_media(JOB.project)
-            return self._json(snap)
+        u = urlparse(self.path)
+        path, q = unquote(u.path), parse_qs(u.query)
+        try:
+            if path in ("/", "/index.html"):
+                return self._file(WEB_DIR / "index.html", WEB_DIR)
+            if path.startswith("/refs/"):
+                return self._file(REFS_DIR / path[len("/refs/"):], REFS_DIR)
+            if path.startswith("/outputs/"):
+                return self._file(OUT_DIR / path[len("/outputs/"):], OUT_DIR)
+            if path == "/api/cuentas":
+                return self._json({"cuentas": flow_multi.list_accounts()})
+            if path == "/api/refs":
+                refs = [{"name": p.stem, "url": f"/refs/{p.name}?v={int(p.stat().st_mtime)}"}
+                        for p in sorted(REFS_DIR.glob("*")) if p.suffix.lower() in IMG_EXT]
+                return self._json({"refs": refs})
+            if path == "/api/proyectos":
+                return self._json({"proyectos": list_projects()})
+            if path == "/api/proyecto":
+                return self._json(project_state(q.get("name", [""])[0], with_guion="guion" in q))
+        except Exception as e:
+            return self._json({"error": str(e)}, 400)
         return self._json({"error": "no encontrado"}, 404)
 
     def do_POST(self):
@@ -456,83 +495,123 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._json({"error": "Datos no válidos (¿archivo demasiado grande?)"}, 400)
         try:
-            # --- referencias ---
-            if path == "/api/ref":
-                name = _safe_name(data.get("name", ""))
-                ext = Path(data.get("filename", "")).suffix.lower()
-                if ext not in IMG_EXT:
-                    return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
-                REFS_DIR.mkdir(exist_ok=True)
-                for old in REFS_DIR.glob(f"{name}.*"):
-                    old.unlink()
-                (REFS_DIR / f"{name}{ext}").write_bytes(base64.b64decode(data["data"]))
-                return self._json({"ok": True})
-            if path == "/api/ref/borrar":
-                for old in REFS_DIR.glob(f"{_safe_name(data.get('name', ''))}.*"):
-                    old.unlink()
-                return self._json({"ok": True})
-            # --- cuentas ---
-            if path == "/api/login":
-                cuenta = _safe_name(data.get("cuenta", ""))
-                subprocess.Popen([sys.executable, str(BASE_DIR / "flow.py"), "login", "--cuenta", cuenta],
-                                 cwd=str(BASE_DIR))
-                return self._json({"ok": True, "cuenta": cuenta})
-            if path == "/api/cuenta/borrar":
-                if JOB.running:
-                    return self._json({"error": "No se puede borrar una cuenta mientras se generan imágenes."}, 400)
-                d = flow_multi.profile_dir(data.get("cuenta", ""))
-                if not d.exists():
-                    return self._json({"error": "Esa cuenta no existe."}, 400)
-                try:
-                    _rmtree(d)
-                except Exception:
-                    return self._json({"error": "No se pudo borrar: cierra la ventana de Chrome de esa cuenta y vuelve a intentarlo."}, 400)
-                return self._json({"ok": True})
-            # --- proyecto y generación ---
-            if path == "/api/abrir":
-                JOB.open(data.get("project", ""))
-                return self._json({"ok": True})
-            if path == "/api/start":
-                cuentas = [c for c in data.get("cuentas", []) if c]
-                if not cuentas:
-                    return self._json({"error": "Elige al menos una cuenta."}, 400)
-                JOB.start(data["guion"], cuentas)
-                return self._json({"ok": True})
-            if path == "/api/rehacer":
-                JOB.rehacer(data.get("name", ""), data.get("job"), data.get("cuentas") or [])
-                return self._json({"ok": True})
-            if path == "/api/stop":
-                JOB.stop()
-                return self._json({"ok": True})
-            # --- narración, vista previa y render ---
-            if path == "/api/narracion":
-                if not JOB.project:
-                    return self._json({"error": "Abre o crea primero un proyecto."}, 400)
-                ext = Path(data.get("filename", "")).suffix.lower()
-                if ext not in AUDIO_EXT:
-                    return self._json({"error": "Formato no admitido (mp3, wav, m4a, aac, ogg, flac)."}, 400)
-                proj_dir = _project_dir(JOB.project)
-                proj_dir.mkdir(parents=True, exist_ok=True)
-                for old in proj_dir.glob("narracion.*"):
-                    old.unlink()
-                (proj_dir / f"narracion{ext}").write_bytes(base64.b64decode(data["data"]))
-                return self._json({"ok": True})
-            if path in ("/api/tiempos", "/api/render"):
-                if not JOB.project:
-                    return self._json({"error": "Abre o crea primero un proyecto."}, 400)
-                RENDER.start(JOB.project, "tiempos" if path == "/api/tiempos" else "render",
-                             data.get("transicion", "fundido"))
-                return self._json({"ok": True})
-            if path == "/api/render/stop":
-                RENDER.stop()
-                return self._json({"ok": True})
+            return self._post(path, data)
         except Exception as e:
             return self._json({"error": str(e)}, 400)
+
+    def _post(self, path: str, data: dict):
+        name = data.get("name", "")
+        # --- referencias ---
+        if path == "/api/ref":
+            ref = _safe_name(data.get("ref", ""))
+            ext = Path(data.get("filename", "")).suffix.lower()
+            if ext not in IMG_EXT:
+                return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
+            REFS_DIR.mkdir(exist_ok=True)
+            for old in REFS_DIR.glob(f"{ref}.*"):
+                old.unlink()
+            (REFS_DIR / f"{ref}{ext}").write_bytes(base64.b64decode(data["data"]))
+            return self._json({"ok": True})
+        if path == "/api/ref/borrar":
+            for old in REFS_DIR.glob(f"{_safe_name(data.get('ref', ''))}.*"):
+                old.unlink()
+            return self._json({"ok": True})
+        # --- cuentas ---
+        if path == "/api/login":
+            cuenta = _safe_name(data.get("cuenta", ""))
+            subprocess.Popen([sys.executable, str(BASE_DIR / "flow.py"), "login", "--cuenta", cuenta],
+                             cwd=str(BASE_DIR))
+            return self._json({"ok": True, "cuenta": cuenta})
+        if path == "/api/cuenta/borrar":
+            if JOB.running:
+                return self._json({"error": "No se puede borrar una cuenta mientras se generan imágenes."}, 400)
+            d = flow_multi.profile_dir(data.get("cuenta", ""))
+            if not d.exists():
+                return self._json({"error": "Esa cuenta no existe."}, 400)
+            try:
+                _rmtree(d)
+            except Exception:
+                return self._json({"error": "No se pudo borrar: cierra la ventana de Chrome de esa cuenta."}, 400)
+            return self._json({"ok": True})
+        # --- proyectos ---
+        if path == "/api/proyecto/crear":
+            nuevo = _nombre_libre(name or f"proyecto_{datetime.now():%Y%m%d_%H%M}")
+            _pdir(nuevo).mkdir(parents=True)
+            _write_json(_pdir(nuevo) / "guion.json", {"project": nuevo, "jobs": data.get("jobs") or []})
+            _write_json(_pdir(nuevo) / "ajustes.json", AJUSTES_DEF)
+            return self._json({"ok": True, "name": nuevo})
+        if path == "/api/proyecto/duplicar":
+            src = _pdir(name)
+            if not (src / "guion.json").exists():
+                return self._json({"error": "Ese proyecto no existe."}, 400)
+            nuevo = _nombre_libre(data.get("nuevo") or f"{src.name}_copia")
+            shutil.copytree(src, _pdir(nuevo), ignore=shutil.ignore_patterns(*NO_COPIAR, "*.tmp"))
+            g = load_guion(nuevo)
+            g["project"] = nuevo
+            _write_json(_pdir(nuevo) / "guion.json", g)
+            return self._json({"ok": True, "name": nuevo})
+        if path == "/api/proyecto/borrar":
+            if _ocupado(name):
+                return self._json({"error": "Ese proyecto está generando o renderizando ahora mismo."}, 400)
+            d = _pdir(name)
+            if not (d / "guion.json").exists():
+                return self._json({"error": "Ese proyecto no existe."}, 400)
+            _rmtree(d)
+            return self._json({"ok": True})
+        if path == "/api/proyecto/guardar":
+            pdir = _pdir(name)
+            if not (pdir / "guion.json").exists():
+                return self._json({"error": "Ese proyecto no existe."}, 400)
+            if "guion" in data:
+                old = load_guion(name)
+                g = {**old, "jobs": data["guion"].get("jobs", []), "project": pdir.name}
+                _write_json(pdir / "guion.json", g)
+            if "ajustes" in data:
+                aj = {**load_ajustes(name), **{k: v for k, v in data["ajustes"].items() if k in AJUSTES_DEF}}
+                _write_json(pdir / "ajustes.json", aj)
+            return self._json({"ok": True, "guardado": datetime.now().strftime("%H:%M:%S")})
+        # --- generación ---
+        if path == "/api/generar":
+            cuentas = [c for c in data.get("cuentas", []) if c]
+            if not cuentas:
+                return self._json({"error": "Elige al menos una cuenta."}, 400)
+            JOB.start(name, cuentas, bool(data.get("solo_faltan")))
+            return self._json({"ok": True})
+        if path == "/api/rehacer":
+            JOB.rehacer(name, data.get("plano", ""), data.get("job"), data.get("cuentas") or [])
+            return self._json({"ok": True})
+        if path == "/api/parar":
+            if JOB.project == _safe_name(name):
+                JOB.stop()
+            return self._json({"ok": True})
+        # --- audio, tiempos y render ---
+        if path in ("/api/narracion", "/api/musica"):
+            stem = "narracion" if path == "/api/narracion" else "musica"
+            ext = Path(data.get("filename", "")).suffix.lower()
+            if ext not in AUDIO_EXT:
+                return self._json({"error": "Formato no admitido (mp3, wav, m4a, aac, ogg, flac)."}, 400)
+            pdir = _pdir(name)
+            for old in pdir.glob(f"{stem}.*"):
+                old.unlink()
+            (pdir / f"{stem}{ext}").write_bytes(base64.b64decode(data["data"]))
+            return self._json({"ok": True})
+        if path == "/api/musica/borrar":
+            for old in _pdir(name).glob("musica.*"):
+                old.unlink()
+            return self._json({"ok": True})
+        if path in ("/api/tiempos", "/api/render"):
+            RENDER.start(name, "tiempos" if path == "/api/tiempos" else "render")
+            return self._json({"ok": True})
+        if path == "/api/render/parar":
+            if RENDER.project == _safe_name(name):
+                RENDER.stop()
+            return self._json({"ok": True})
         return self._json({"error": "no encontrado"}, 404)
 
 
 def main() -> int:
     REFS_DIR.mkdir(exist_ok=True)
+    OUT_DIR.mkdir(exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"
     print(f"flow-mackenzie web en {url}  (Ctrl+C para cerrar)")

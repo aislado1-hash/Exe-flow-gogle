@@ -340,6 +340,11 @@ def main() -> int:
     ap.add_argument("--salida", help="Archivo de salida (por defecto <carpeta>\\montaje.mp4).")
     ap.add_argument("--transicion", choices=["fundido", "corte"], default="fundido",
                     help="fundido (0,25 s, por defecto) o corte seco.")
+    ap.add_argument("--musica", help="Música de fondo (se repite si es corta y se funde al final).")
+    ap.add_argument("--musica-db", type=float, default=-14.0,
+                    help="Volumen de la música en dB (por defecto -14).")
+    ap.add_argument("--ducking", choices=["no", "suave", "media", "fuerte"], default="media",
+                    help="Cuánto baja la música cuando hablas (por defecto media).")
     ap.add_argument("--solo-tiempos", action="store_true",
                     help="Solo calcula cuándo entra cada imagen (montaje_tiempos.json), sin renderizar.")
     args = ap.parse_args()
@@ -385,7 +390,9 @@ def main() -> int:
         align_without_audio_text(pieces, total)
 
     fade_s = 0.0 if args.transicion == "corte" else FADE
-    tiempos = {"audio": audio.name, "duracion": total, "fundido": fade_s, "planos": [
+    tiempos = {"audio": audio.name, "duracion": total, "fundido": fade_s,
+               "voz": [[round(a, 3), round(b, 3)] for a, b in speech_intervals(words)] if words else [],
+               "planos": [
         {"name": p["name"], "t0": round(p["t0"], 3), "t1": round(p["t1"], 3), "efecto": p["efecto"],
          "texto": p.get("texto", ""),
          "imagen": p["image_path"].relative_to(folder).as_posix() if p.get("image_path") else None}
@@ -419,9 +426,14 @@ def main() -> int:
             lines.append(line)
         video_only = tmp / "video.mp4"
         join_parts(parts, durs, fade, video_only)
-        run(["-i", str(video_only), "-i", str(audio), "-map", "0:v", "-map", "1:a",
-             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
-             "-movflags", "+faststart", str(out_file)])
+        musica = Path(args.musica).resolve() if args.musica else None
+        if musica and musica.exists():
+            print(f"   Música: {musica.name} · {args.musica_db:+.0f} dB · ducking {args.ducking}")
+            mix_audio(video_only, audio, musica, total, args.musica_db, args.ducking, out_file, words)
+        else:
+            run(["-i", str(video_only), "-i", str(audio), "-map", "0:v", "-map", "1:a",
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+                 "-movflags", "+faststart", str(out_file)])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -431,6 +443,71 @@ def main() -> int:
     if con_texto:
         print(f"Subtítulos: {folder / 'montaje.srt'}")
     return 0
+
+
+DUCKING_DB = {"suave": -6.0, "media": -10.0, "fuerte": -16.0}   # cuánto baja la música al hablar
+DUCK_ATTACK, DUCK_RELEASE = 0.25, 0.45                              # rampas (s)
+
+
+def speech_intervals(words: list[dict], gap: float = 0.5) -> list[tuple[float, float]]:
+    """Tramos en los que hablas (palabras seguidas, uniendo pausas cortas)."""
+    out = []
+    for w in words:
+        a, b = float(w["start"]), float(w["end"])
+        if out and a - out[-1][1] < gap:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def duck_expression(intervals: list[tuple[float, float]], duck_db: float) -> str:
+    """Expresión de volumen para ffmpeg: 1 en las pausas y duck_db mientras hablas,
+    con rampas suaves de entrada y salida."""
+    if not intervals:
+        return "1"
+    g = 10 ** (duck_db / 20)
+    terms = [f"clip(min((t-{a - DUCK_ATTACK:.3f})/{DUCK_ATTACK},({b + DUCK_RELEASE:.3f}-t)/{DUCK_RELEASE}),0,1)"
+             for a, b in intervals]
+    # max() de ffmpeg admite 2 argumentos: se anidan por parejas
+    while len(terms) > 1:
+        terms = [f"max({terms[k]},{terms[k + 1]})" if k + 1 < len(terms) else terms[k]
+                 for k in range(0, len(terms), 2)]
+    return f"1-{1 - g:.4f}*{terms[0]}"
+
+
+def mix_audio(video: Path, voz: Path, musica: Path, total: float, musica_db: float,
+              ducking: str, out: Path, words: list[dict] | None = None) -> None:
+    """Voz en off + música de fondo. La música se repite hasta cubrir el vídeo,
+    se funde al principio y al final y baja mientras hablas (ducking)."""
+    fmt = "aformat=sample_rates=48000:channel_layouts=stereo"
+    fade = min(2.5, total / 4)
+    mus = (f"[2:a]{fmt},volume={musica_db}dB,atrim=duration={total:.3f},"
+           f"afade=t=in:d=0.8,afade=t=out:st={max(total - fade, 0):.3f}:d={fade:.3f}")
+    if ducking in DUCKING_DB and words:
+        expr = duck_expression(speech_intervals(words), DUCKING_DB[ducking])
+        graph = (f"[1:a]{fmt}[voz];{mus},volume='{expr}':eval=frame[musd];"
+                 f"[voz][musd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]")
+    elif ducking in DUCKING_DB:
+        # Sin transcripción: compresor guiado por la voz
+        graph = (f"[1:a]{fmt},asplit=2[voz][sc];{mus}[mus];"
+                 f"[mus][sc]sidechaincompress=threshold=0.02:ratio=12:attack=30:release=600[musd];"
+                 f"[voz][musd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]")
+    else:
+        graph = (f"[1:a]{fmt}[voz];{mus}[musd];"
+                 f"[voz][musd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]")
+    script = out.with_name("_mezcla_filtro.txt")      # en archivo: Windows limita la longitud del comando
+    script.write_text(graph, encoding="utf-8")
+    common = ["-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+              "-t", f"{total:.3f}", "-movflags", "+faststart", str(out)]
+    inputs = ["-i", str(video), "-i", str(voz), "-stream_loop", "-1", "-i", str(musica)]
+    try:
+        try:
+            run([*inputs, "-filter_complex_script", str(script), *common])
+        except RuntimeError:
+            run([*inputs, "-/filter_complex", str(script), *common])   # ffmpeg 7 o posterior
+    finally:
+        script.unlink(missing_ok=True)
 
 
 def write_srt(words: list[dict], path: Path, max_words: int = 7) -> None:
