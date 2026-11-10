@@ -251,6 +251,19 @@ async def cmd_video(args) -> int:
         await flow.shutdown()
 
 
+async def _save_debug(project_dir: Path, debug_name: str) -> None:
+    """Captura y HTML de la página en <proyecto>/_debug para diagnosticar fallos."""
+    debug_dir = project_dir / "_debug"
+    try:
+        debug_dir.mkdir(exist_ok=True)
+        page = await flow.get_page()
+        await page.screenshot(path=str(debug_dir / f"{debug_name}.png"))
+        (debug_dir / f"{debug_name}.html").write_text(await page.content(), encoding="utf-8")
+        print(f"  Diagnóstico guardado en {debug_dir}")
+    except Exception as debug_error:
+        print(f"  No se pudo guardar el diagnóstico: {debug_error}")
+
+
 async def cmd_batch(args) -> int:
     if not session_exists():
         print("SIN SESION. Corre primero: python flow.py login")
@@ -313,7 +326,10 @@ async def cmd_batch(args) -> int:
                         job.get("start") and job.get("start_mode") != "upload"
                         and last_image_name and Path(job["start"]).stem == last_image_name
                     )
-                    saved = await _gen_video(
+                    retries = int(job.get("retries", defaults.get("video_retries", 2)))
+                    for attempt in range(1, retries + 2):
+                      try:
+                        saved = await _gen_video(
                         prompt, ratio, job.get("model", d_vid_model),
                         int(job.get("count", 1)),
                         _resolve_asset(project_dir, job.get("start")),
@@ -323,7 +339,16 @@ async def cmd_batch(args) -> int:
                         resolution=job.get("resolution", d_vid_resolution),
                         download=job.get("download", d_dl_videos),
                         start_ref=references.get(job["start_ref"], job["start_ref"]) if job.get("start_ref") else None,
-                    )
+                        )
+                        break
+                      except Exception as e:
+                        if attempt > retries:
+                            raise
+                        print(f"  Fallo en '{name}' (intento {attempt}/{retries + 1}): {e}")
+                        await _save_debug(project_dir, f"{i:02d}_{_safe(name)}_intento{attempt}")
+                        print(f"  Reintentando en 5 s...")
+                        await flow.close_overlays()
+                        await asyncio.sleep(5)
                 else:
                     print(f"  tipo desconocido '{jtype}', saltando.")
                     continue
@@ -332,16 +357,7 @@ async def cmd_batch(args) -> int:
                 results.append({"name": name, "type": jtype, "file": saved, "ok": True})
             except Exception as e:
                 print(f"  ERROR en '{name}': {e}")
-                debug_dir = project_dir / "_debug"
-                try:
-                    debug_dir.mkdir(exist_ok=True)
-                    page = await flow.get_page()
-                    debug_name = f"{i:02d}_{_safe(name)}"
-                    await page.screenshot(path=str(debug_dir / f"{debug_name}.png"))
-                    (debug_dir / f"{debug_name}.html").write_text(await page.content(), encoding="utf-8")
-                    print(f"  Diagnóstico guardado en {debug_dir}")
-                except Exception as debug_error:
-                    print(f"  No se pudo guardar el diagnóstico: {debug_error}")
+                await _save_debug(project_dir, f"{i:02d}_{_safe(name)}")
                 results.append({"name": name, "type": jtype, "ok": False, "error": str(e)})
     finally:
         try:
