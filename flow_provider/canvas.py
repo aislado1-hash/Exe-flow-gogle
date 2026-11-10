@@ -565,7 +565,9 @@ async def _open_resources_dialog(page):
         return upload_btn
     # Esperar a que el cuadro del prompt esté listo.
     await page.locator('div[contenteditable="true"]').first.wait_for(state="visible", timeout=30_000)
-    for sel in (SEL_ADD_INGREDIENT, _SEL_ADD_FALLBACK):
+    # En modo vídeo (Fotogramas) no hay «+»: la casilla «Inicio» abre el mismo
+    # panel de recursos con «Subir archivo…».
+    for sel in (SEL_ADD_INGREDIENT, _SEL_ADD_FALLBACK, SEL_SLOTS_INICIAR):
         trigger = page.locator(sel).first
         try:
             await trigger.wait_for(state="visible", timeout=8_000)
