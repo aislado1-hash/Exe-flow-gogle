@@ -122,23 +122,36 @@ def find_media(folder: Path, name: str, exts: tuple[str, ...]) -> Path | None:
 # ---------------------------------------------------------------------------
 # 2. Transcripción y alineado
 # ---------------------------------------------------------------------------
+def load_audio_16k(audio: Path):
+    """Lee el audio con ffmpeg (16 kHz, mono, float32). No depende de PyAV,
+    que en algunas versiones es incompatible con faster-whisper."""
+    import numpy as np
+    r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-i", str(audio),
+                        "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", "16000", "-"],
+                       capture_output=True)
+    if r.returncode != 0 or not r.stdout:
+        raise RuntimeError("No pude leer el audio: " + r.stderr.decode("utf-8", "replace")[-300:])
+    return np.frombuffer(r.stdout, dtype=np.float32).copy()
+
+
 def transcribe(audio: Path, model_size: str) -> list[dict]:
     from faster_whisper import WhisperModel
-    model = None
+    samples = load_audio_16k(audio)
+    last_error = None
     for device, ctype in (("cuda", "float16"), ("cpu", "int8")):
         try:
             model = WhisperModel(model_size, device=device, compute_type=ctype)
-            segments, _ = model.transcribe(str(audio), language="es", word_timestamps=True,
+            segments, _ = model.transcribe(samples, language="es", word_timestamps=True,
                                            vad_filter=True)
             words = [{"w": w.word.strip(), "start": w.start, "end": w.end}
                      for seg in segments for w in (seg.words or [])]
-            print(f"  Transcripción con {device}: {len(words)} palabras.")
+            print(f"  Transcripción con {'GPU' if device == 'cuda' else 'CPU'}: {len(words)} palabras.")
             return words
         except Exception as e:
-            if device == "cpu":
-                raise
-            print(f"  (GPU no disponible para Whisper: {str(e)[:80]}… uso CPU)")
-    return []
+            last_error = e
+            if device == "cuda":
+                print(f"  (La GPU no funciona con Whisper en este PC: {str(e)[:100]}. Uso la CPU.)")
+    raise RuntimeError(f"Whisper no pudo transcribir el audio: {last_error}")
 
 
 def cached_transcription(folder: Path, audio: Path, model_size: str) -> list[dict]:
