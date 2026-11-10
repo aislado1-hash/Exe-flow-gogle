@@ -271,10 +271,12 @@ const FIN_VIDEO = " La cámara permanece fija, mismo ángulo.";
 const PLANTILLA_HABLA = "Una camionera joven, sentada tranquilamente en la cabina, cuenta una anécdota a cámara con gestos suaves y naturales de las manos y expresión cercana, parpadeo normal." + FIN_VIDEO;
 let planos = [];
 let refHablaDefecto = "mackenzie_habla";
+const HABLA_DUR = "5s";
+const PLANTILLA_FOTO_HABLA = "La mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia, girada hacia la cámara, mirando a cámara con expresión cercana, como si fuera a contar algo. Luz natural de día por el parabrisas. Plano medio frontal, cámara fija, foto realista.";
 
 function segDe(p) {
   const d = (x) => parseInt(String(x || "").replace(/\D/g, "")) || 0;
-  if (p.modo === "habla") return d(p.dur) || 6;
+  if (p.modo === "habla") return d(HABLA_DUR);
   if (p.modo === "foto") return d(p.pantalla) || 4;
   return d(p.dur) || d($("dur").value) || 4;
 }
@@ -289,10 +291,15 @@ function planosDesdeJobs(jobs) {
       const k = jobs.findIndex((v, n) => n > i && !usados.has(n) && (v.type === "video") && v.start && v.start.replace(/\.\w+$/, "") === j.name);
       if (k >= 0) {
         usados.add(k); const v = jobs[k];
+        if (/^habla\d+/.test(v.name || "")) {
+          out.push({modo: "habla", refs: j.refs || [], img: j.prompt || "", vid: v.prompt || "", model: v.model || "", texto: j.texto || v.texto || ""});
+          return;
+        }
         out.push({modo: "foto_video", refs: j.refs || [], img: j.prompt || "", vid: v.prompt || "", dur: v.duration || "", model: v.model || "", texto: j.texto || v.texto || ""});
       } else out.push({modo: "foto", refs: j.refs || [], img: j.prompt || "", pantalla: j.screen_time || "", texto: j.texto || ""});
     } else if (j.start_ref) {
-      out.push({modo: "habla", refHabla: j.start_ref, vid: j.prompt || "", dur: j.duration || "6s", model: j.model || "", texto: j.texto || ""});
+      // Antiguo: foto subida. Ahora la foto se genera en Flow.
+      out.push({modo: "habla", refs: ["mackenzie", "cabina"], img: PLANTILLA_FOTO_HABLA, vid: j.prompt || "", model: j.model || "", texto: j.texto || ""});
     } else {
       out.push({modo: "foto_video", refs: [], img: "", vid: j.prompt || "", dur: j.duration || "", model: j.model || "", texto: j.texto || ""});
     }
@@ -304,10 +311,12 @@ function jobsDesdePlanos() {
   const jobs = []; let n = 0, h = 0;
   for (const p of planos) {
     if (p.modo === "habla") {
-      h++; const job = {type: "video", name: `habla${String(h).padStart(2, "0")}`, start_ref: p.refHabla || refHablaDefecto,
-                        duration: p.dur || "6s", prompt: p.vid};
-      if (p.texto) job.texto = p.texto;
-      if (p.model) job.model = p.model; jobs.push(job); continue;
+      h++; const hn = `habla${String(h).padStart(2, "0")}`;
+      const foto = {type: "image", name: `${hn}_foto`, refs: p.refs || [], prompt: p.img || PLANTILLA_FOTO_HABLA};
+      if (p.texto) foto.texto = p.texto;
+      const job = {type: "video", name: hn, start: `${hn}_foto`, duration: HABLA_DUR, prompt: p.vid};
+      if (p.model) job.model = p.model;
+      jobs.push(foto, job); continue;
     }
     n++; const name = `plano${String(n).padStart(2, "0")}`;
     if (p.modo === "foto" || p.modo === "foto_video") {
@@ -346,12 +355,10 @@ function erroresPlanos() {
   if (!planos.length) e.push("No hay planos.");
   planos.forEach((p, i) => {
     const n = `Plano ${i + 1}`;
-    if ((p.modo === "foto" || p.modo === "foto_video") && !p.img.trim()) e.push(`${n}: falta el prompt de la foto.`);
+    if (p.modo !== "habla" && !(p.img || "").trim()) e.push(`${n}: falta el prompt de la foto.`);
     if (p.modo !== "foto" && !(p.vid || "").trim()) e.push(`${n}: falta el prompt del vídeo.`);
-    for (const r of (p.modo === "foto" || p.modo === "foto_video") ? (p.refs || []) : [])
+    for (const r of p.refs || [])
       if (!refsActuales.includes(r)) e.push(`${n}: falta la referencia «${r}».`);
-    if (p.modo === "habla" && !refsActuales.includes(p.refHabla || refHablaDefecto))
-      e.push(`${n}: sube la foto de referencia «${p.refHabla || refHablaDefecto}».`);
   });
   return e;
 }
@@ -362,7 +369,7 @@ function pintarPlanos() {
   $("planos").innerHTML = planos.map((p, i) => {
     const s = segDe(p); const ini = t; t += s;
     tl.push(`<div class="tl-${p.modo}" style="flex:${s}" data-go="${i}" title="Plano ${i + 1} · ${MODOS[p.modo]} · ${fmt(ini)}–${fmt(t)}">${i + 1}</div>`);
-    const conFoto = p.modo === "foto" || p.modo === "foto_video";
+    const conFoto = true;  // los tres tipos generan su foto en Flow
     const conVid = p.modo !== "foto";
     const refsFoto = [...new Set([...otrasRefs, ...(p.refs || [])])];
     return `<div class="plano ${p.modo}" id="pl${i}">
@@ -379,14 +386,14 @@ function pintarPlanos() {
       <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto || "")}" placeholder="${p.modo === "habla" ? "La frase que dice ella" : "Vacío = sigue con la frase del plano anterior"}">
       ${conFoto ? `<span class="lbl">Referencias de la foto</span>
         <div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="muted">Sube referencias arriba.</span>`}</div>
-        <span class="lbl">Prompt de la foto</span>
+        <span class="lbl">${p.modo === "habla" ? "Foto de ella mirando a cámara (se genera en Flow)" : "Prompt de la foto"}</span>
         <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>` : ""}
-      ${p.modo === "habla" ? `<span class="lbl">Foto de ella hablando</span>
-        <select data-i="${i}" data-k="refHabla">${[...new Set([refHablaDefecto, ...refsActuales])].map(r => `<option ${(p.refHabla || refHablaDefecto) === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>` : ""}
       ${conVid ? `<span class="lbl">${p.modo === "habla" ? "Cómo habla (la frase va en «Narración»; suena tu audio)" : "Prompt de la animación"}</span>
         <textarea data-i="${i}" data-k="vid">${esc(p.vid)}</textarea>` : ""}
       <div class="extra">
-        ${conVid ? `<div><span class="lbl">Duración</span><select data-i="${i}" data-k="dur">
+        ${p.modo === "habla" ? `<div><span class="lbl">Duración</span><div class="muted" style="padding:8px 0">${HABLA_DUR} (fija)</div></div>
+          <div><span class="lbl">Modelo de vídeo (opcional)</span><input type="text" data-i="${i}" data-k="model" value="${esc(p.model || "")}" placeholder="el de Ajustes"></div>`
+        : conVid ? `<div><span class="lbl">Duración</span><select data-i="${i}" data-k="dur">
             <option value="">${p.modo === "habla" ? "6s" : "Por defecto (" + $("dur").value + ")"}</option>
             ${["4s","5s","6s","7s","8s"].map(d => `<option ${p.dur === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
           <div><span class="lbl">Modelo de vídeo (opcional)</span><input type="text" data-i="${i}" data-k="model" value="${esc(p.model || "")}" placeholder="${p.modo === "habla" ? "p. ej. el Veo que habla" : "el de Ajustes"}"></div>`
@@ -419,8 +426,12 @@ $("planos").addEventListener("change", (e) => {
   const p = planos[i];
   if (k === "modo") {
     const antes = p.modo; p.modo = el.value;
-    if (p.modo === "habla" && antes !== "habla") { p.vidAntes = p.vid; p.vid = PLANTILLA_HABLA; p.dur = ""; }
-    else if (antes === "habla" && p.modo !== "habla") { p.vid = p.vidAntes || ""; }
+    if (p.modo === "habla" && antes !== "habla") {
+      p.vidAntes = p.vid; p.vid = PLANTILLA_HABLA; p.dur = "";
+      p.imgAntes = p.img; p.img = PLANTILLA_FOTO_HABLA;
+      p.refsAntes = p.refs; p.refs = ["mackenzie", "cabina"].filter(r => refsActuales.includes(r));
+    }
+    else if (antes === "habla" && p.modo !== "habla") { p.vid = p.vidAntes || ""; p.img = p.imgAntes || ""; p.refs = p.refsAntes || p.refs; }
     if ((p.modo === "foto" || p.modo === "foto_video") && p.img === undefined) { p.img = ""; p.refs = ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)); }
   } else p[k] = el.value;
   refrescar();
@@ -462,7 +473,7 @@ $("ejemplo").onclick = () => {
   planos = [
     {modo: "foto_video", refs: ["mackenzie", "cabina"], img: "Usa a la mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia. Luz suave de mañana, plano medio lateral, cámara fija, foto realista.",
      vid: "Ella ajusta el retrovisor y luego mira al frente. Movimiento natural." + FIN_VIDEO + " Ella no habla.", dur: "", model: "", texto: "Son las seis de la mañana y ya estoy en la cabina."},
-    {modo: "habla", refHabla: refHablaDefecto, vid: "Ella mira a cámara y dice en español, con voz natural y tono cercano: «Hoy os enseño cómo empieza mi día en la cabina». Gestos naturales al hablar, parpadeo normal." + FIN_VIDEO, dur: "6s", model: ""},
+    {modo: "habla", refs: ["mackenzie", "cabina"], img: PLANTILLA_FOTO_HABLA, vid: PLANTILLA_HABLA, model: "", texto: "Hoy os enseño cómo empieza mi día en la cabina."},
     {modo: "foto", refs: ["camion"], img: "El camión de la referencia aparcado en un área de servicio al amanecer. Plano general, cámara fija, foto realista.", pantalla: "5s"}
   ];
   refrescar();
