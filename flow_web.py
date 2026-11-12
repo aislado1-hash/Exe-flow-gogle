@@ -3,7 +3,10 @@ flow_web.py - Web local de flow-mackenzie.
 
   python flow_web.py            -> abre http://localhost:8765 en tu navegador
 
-Inicio: proyectos (crear, abrir, duplicar, borrar), referencias y cuentas de Flow.
+Inicio con dos pestañas: «Camioneras Narración» y «Videos Stick». Cada una con
+sus proyectos (crear, abrir, duplicar, borrar). Camioneras usa las referencias
+de refs/; Videos Stick usa una imagen de estilo común (refs_stick/) y los
+personajes de cada proyecto (outputs/<proyecto>/personajes/).
 Cada proyecto, por pasos:
   1. Guion     - planos (foto + voz en off), se guarda solo mientras editas.
   2. Imágenes  - generar en Flow, galería, rehacer una sola imagen.
@@ -33,7 +36,9 @@ import flow_multi
 
 BASE_DIR = Path(__file__).parent.resolve()
 WEB_DIR = BASE_DIR / "web"
-REFS_DIR = BASE_DIR / "refs"
+REFS_DIR = BASE_DIR / "refs"                 # referencias de «Camioneras Narración»
+STICK_DIR = BASE_DIR / "refs_stick"          # estilo visual de «Videos Stick»
+TIPOS = {"camioneras": "Camioneras Narración", "stick": "Videos Stick"}
 OUT_DIR = BASE_DIR / "outputs"
 PORT = int(os.getenv("FLOW_WEB_PORT", "8765"))
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
@@ -41,7 +46,7 @@ AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 SUBPROC_ENV = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
 NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": "fundido",
-               "srt": True, "subtitulos_previa": False,
+               "srt": True, "subtitulos_previa": False, "tipo": "camioneras",
                "musica_db": -14, "ducking": "media"}
 # Archivos que no se copian al duplicar un proyecto
 NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
@@ -77,7 +82,8 @@ def find_image(pdir: Path, name: str) -> Path | None:
     """La imagen más reciente de un plano (puede estar en cualquier carpeta de cuenta)."""
     hits = []
     for ext in IMG_EXT:
-        hits += [h for h in pdir.rglob(f"{name}{ext}") if not (set(h.parts) & NO_COPIAR)]
+        hits += [h for h in pdir.rglob(f"{name}{ext}")
+                 if not (set(h.parts) & (NO_COPIAR | {"personajes"}))]
     return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
 
 
@@ -88,6 +94,27 @@ def find_audio(pdir: Path, stem: str) -> Path | None:
 
 def _all_refs() -> dict[str, str]:
     return {p.stem: str(p) for p in REFS_DIR.glob("*") if p.suffix.lower() in IMG_EXT}
+
+
+def estilo_stick() -> Path | None:
+    hits = [p for p in STICK_DIR.glob("estilo.*") if p.suffix.lower() in IMG_EXT]
+    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+
+
+def personajes(project: str) -> dict[str, Path]:
+    d = _pdir(project) / "personajes"
+    return {p.stem: p for p in sorted(d.glob("*")) if p.suffix.lower() in IMG_EXT} if d.exists() else {}
+
+
+def refs_de(project: str) -> dict[str, str]:
+    """Referencias que puede usar un proyecto según su tipo."""
+    if load_ajustes(project).get("tipo") == "stick":
+        refs = {k: str(v) for k, v in personajes(project).items()}
+        est = estilo_stick()
+        if est:
+            refs["estilo"] = str(est)
+        return refs
+    return _all_refs()
 
 
 def _rmtree(path: Path) -> None:
@@ -154,11 +181,19 @@ class Job:
         if not cuentas:
             raise RuntimeError("Ninguna de las cuentas elegidas tiene sesión.")
         cuentas = cuentas[:len(jobs)]          # no abrir navegadores sin trabajo
-        refs = _all_refs()
+        refs = refs_de(project)
+        aj = load_ajustes(project)
+        if aj.get("tipo") == "stick":
+            # El estilo visual va siempre en todas las imágenes
+            if "estilo" not in refs:
+                raise RuntimeError("Sube la imagen de estilo visual en la pestaña Videos Stick.")
+            jobs = [{**j, "refs": ["estilo"] + [r for r in (j.get("refs") or []) if r != "estilo"],
+                     "prompt": j.get("prompt", "") if "estilo" in j.get("prompt", "").lower()
+                     else j.get("prompt", "").rstrip(". ") + ". Mismo estilo visual que la imagen de referencia de estilo."}
+                    for j in jobs]
         missing = sorted({r for j in jobs for r in (j.get("refs") or [])} - set(refs))
         if missing:
             raise RuntimeError("Faltan referencias: " + ", ".join(missing))
-        aj = load_ajustes(project)
         lote = {"project": _safe_name(project), "references": refs,
                 "defaults": {"ratio": aj["ratio"], "image_model": aj["image_model"]},
                 "jobs": [{**j, "count": 1} for j in jobs]}
@@ -338,6 +373,7 @@ def project_state(project: str, with_guion: bool = False) -> dict:
         g = {k: v for k, v in guion.items() if k != "references"}
         out["guion"] = g
         out["ajustes"] = load_ajustes(project)
+    out["personajes"] = [{"name": k, "url": _url(v)} for k, v in personajes(project).items()]
     return out
 
 
@@ -354,7 +390,8 @@ def list_projects() -> list[dict]:
         hechas = [find_image(d, n) for n in imgs]
         primera = next((h for h in hechas if h), None)
         mtimes = [p.stat().st_mtime for p in [g, d / "ajustes.json", d / "montaje.mp4"] if p.exists()]
-        items.append({"name": d.name, "planos": len(imgs), "imagenes": sum(1 for h in hechas if h),
+        items.append({"name": d.name, "planos": len(imgs),
+                      "tipo": _read_json(d / "ajustes.json", {}).get("tipo", "camioneras"), "imagenes": sum(1 for h in hechas if h),
                       "thumb": _url(primera) if primera else None, "video": (d / "montaje.mp4").exists(),
                       "narracion": bool(find_audio(d, "narracion")),
                       "modificado": datetime.fromtimestamp(max(mtimes)).strftime("%d/%m/%Y %H:%M"),
@@ -457,6 +494,11 @@ class Handler(BaseHTTPRequestHandler):
                 refs = [{"name": p.stem, "url": f"/refs/{p.name}?v={int(p.stat().st_mtime)}"}
                         for p in sorted(REFS_DIR.glob("*")) if p.suffix.lower() in IMG_EXT]
                 return self._json({"refs": refs})
+            if path == "/api/estilo":
+                est = estilo_stick()
+                return self._json({"url": f"/refs_stick/{est.name}?v={int(est.stat().st_mtime)}" if est else None})
+            if path.startswith("/refs_stick/"):
+                return self._file(STICK_DIR / path[len("/refs_stick/"):], STICK_DIR)
             if path == "/api/proyectos":
                 return self._json({"proyectos": list_projects()})
             if path == "/api/proyecto":
@@ -489,6 +531,36 @@ class Handler(BaseHTTPRequestHandler):
                 old.unlink()
             (REFS_DIR / f"{ref}{ext}").write_bytes(base64.b64decode(data["data"]))
             return self._json({"ok": True})
+        if path == "/api/estilo":
+            ext = Path(data.get("filename", "")).suffix.lower()
+            if ext not in IMG_EXT:
+                return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
+            STICK_DIR.mkdir(exist_ok=True)
+            for old in STICK_DIR.glob("estilo.*"):
+                old.unlink()
+            (STICK_DIR / f"estilo{ext}").write_bytes(base64.b64decode(data["data"]))
+            return self._json({"ok": True})
+        if path == "/api/estilo/borrar":
+            for old in STICK_DIR.glob("estilo.*"):
+                old.unlink()
+            return self._json({"ok": True})
+        if path == "/api/personaje":
+            pj = _safe_name(data.get("personaje", ""))
+            if pj.lower() == "estilo" or re.fullmatch(r"plano\d+", pj):
+                return self._json({"error": "Ese nombre está reservado; elige otro."}, 400)
+            ext = Path(data.get("filename", "")).suffix.lower()
+            if ext not in IMG_EXT:
+                return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
+            d = _pdir(name) / "personajes"
+            d.mkdir(parents=True, exist_ok=True)
+            for old in d.glob(f"{pj}.*"):
+                old.unlink()
+            (d / f"{pj}{ext}").write_bytes(base64.b64decode(data["data"]))
+            return self._json({"ok": True})
+        if path == "/api/personaje/borrar":
+            for old in (_pdir(name) / "personajes").glob(f"{_safe_name(data.get('personaje', ''))}.*"):
+                old.unlink()
+            return self._json({"ok": True})
         if path == "/api/ref/borrar":
             for old in REFS_DIR.glob(f"{_safe_name(data.get('ref', ''))}.*"):
                 old.unlink()
@@ -515,7 +587,8 @@ class Handler(BaseHTTPRequestHandler):
             nuevo = _nombre_libre(name or f"proyecto_{datetime.now():%Y%m%d_%H%M}")
             _pdir(nuevo).mkdir(parents=True)
             _write_json(_pdir(nuevo) / "guion.json", {"project": nuevo, "jobs": data.get("jobs") or []})
-            _write_json(_pdir(nuevo) / "ajustes.json", AJUSTES_DEF)
+            tipo = data.get("tipo") if data.get("tipo") in TIPOS else "camioneras"
+            _write_json(_pdir(nuevo) / "ajustes.json", {**AJUSTES_DEF, "tipo": tipo})
             return self._json({"ok": True, "name": nuevo})
         if path == "/api/proyecto/duplicar":
             src = _pdir(name)
@@ -593,6 +666,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> int:
     REFS_DIR.mkdir(exist_ok=True)
+    STICK_DIR.mkdir(exist_ok=True)
     OUT_DIR.mkdir(exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"

@@ -73,6 +73,16 @@
   .empty { border: 1px dashed var(--line2); border-radius: var(--radius); padding: 34px 20px; text-align: center; color: var(--muted); }
 
   /* ---------- inicio ---------- */
+  .tipos { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
+  .tipo { padding: 12px 20px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); cursor: pointer;
+          font-weight: 600; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+  .tipo .cnt { font-size: 11.5px; font-weight: 500; background: var(--panel3); color: var(--muted); border-radius: 999px; padding: 1px 8px; }
+  .tipo.on { border-color: var(--accent); color: var(--text); background: #1f1a10; }
+  .tipo.on .cnt { background: var(--accent); color: var(--accent-ink); }
+  .estilo-box { aspect-ratio: 16 / 9; border-radius: 10px; background: #0a0b0c center/cover no-repeat; border: 1px dashed var(--line2);
+                display: grid; place-items: center; color: var(--muted); cursor: pointer; text-align: center; padding: 10px; }
+  .estilo-box.has { border-style: solid; color: transparent; }
+  .pjs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .home { display: grid; grid-template-columns: 1fr 340px; gap: 18px; align-items: start; }
   @media (max-width: 1050px) { .home { grid-template-columns: 1fr; } }
   .nuevo { display: flex; gap: 8px; }
@@ -175,11 +185,15 @@
 <main>
   <!-- =================== INICIO =================== -->
   <div class="view" id="vHome">
+    <nav class="tipos" id="tipos">
+      <div class="tipo" data-tipo="camioneras">Camioneras Narración <span class="cnt" id="cntCamioneras">0</span></div>
+      <div class="tipo" data-tipo="stick">Videos Stick <span class="cnt" id="cntStick">0</span></div>
+    </nav>
     <div class="home">
       <div>
         <section class="card">
           <div class="head">
-            <h2>Proyectos</h2>
+            <h2 id="tituloProyectos">Proyectos</h2>
             <div class="nuevo">
               <input type="text" id="nuevoNombre" placeholder="Nombre del proyecto nuevo">
               <button class="primary" id="crear">+ Nuevo proyecto</button>
@@ -189,7 +203,17 @@
         </section>
       </div>
       <aside>
-        <section class="card">
+        <section class="card" id="cardEstilo" hidden>
+          <h2>Estilo visual</h2>
+          <div class="estilo-box" id="estiloBox">Clic para subir la imagen de estilo</div>
+          <div class="row" style="margin-top:10px">
+            <button id="estiloCambiar">Subir / cambiar…</button>
+            <button class="ghost danger mini" id="estiloBorrar" hidden>Quitar</button>
+          </div>
+          <p class="faint">Se añade sola como referencia a <b>todas</b> las imágenes de Videos Stick, para que todo salga con el mismo estilo. Los personajes se suben dentro de cada proyecto.</p>
+          <input type="file" id="estiloFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+        </section>
+        <section class="card" id="cardRefs">
           <h2>Referencias</h2>
           <div class="refs" id="refs"></div>
           <div class="row" style="margin-top:10px">
@@ -246,6 +270,18 @@
           <input type="file" id="jsonFile" accept=".json" hidden>
         </section>
         <aside class="sticky">
+          <section class="card" id="cardPersonajes" hidden>
+            <h2>Personajes de este vídeo</h2>
+            <div class="pjs" id="pjs"></div>
+            <div class="row" style="margin-top:10px">
+              <input type="text" id="pjNombre" placeholder="Nombre (p. ej. napoleon)" style="flex:1">
+              <button id="pjAdd">Añadir</button>
+            </div>
+            <input type="file" id="pjFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+            <p class="faint">Márcalos en cada plano como referencia. Clic en uno para cambiar su foto.</p>
+            <div class="lbl">Estilo visual (se añade solo)</div>
+            <div class="estilo-box" id="estiloMini" style="cursor:default"></div>
+          </section>
           <section class="card">
             <h2>Ajustes de imagen</h2>
             <label class="lbl">Modelo de imagen</label>
@@ -402,19 +438,23 @@ let tab = "guion";
 let pollTimer = null;
 
 /* ---------- Navegación (misma ventana, con #/p/nombre/paso) ---------- */
+const TIPOS = {camioneras: "Camioneras Narración", stick: "Videos Stick"};
+let tipoActual = "camioneras";
 function ruta() {
   const m = location.hash.match(/^#\/p\/([^/]+)(?:\/(\w+))?/);
   return m ? {name: decodeURIComponent(m[1]), tab: m[2] || "guion"} : null;
 }
 async function enrutar() {
   const r = ruta();
-  if (!r) { await cerrarProyecto(); mostrarHome(); return; }
+  if (!r) { tipoActual = location.hash.startsWith("#/stick") ? "stick" : "camioneras"; await cerrarProyecto(); mostrarHome(); return; }
   if (!P || P.name !== r.name) { await cerrarProyecto(); if (!(await abrirProyecto(r.name))) return; }
   irTab(r.tab, false);
 }
 window.addEventListener("hashchange", enrutar);
-$("goHome").onclick = () => { location.hash = "#/"; };
-$("volver").onclick = () => { location.hash = "#/"; };
+const homeDe = (t) => t === "stick" ? "#/stick" : "#/";
+$("goHome").onclick = () => { location.hash = homeDe(P ? P.tipo : tipoActual); };
+$("volver").onclick = () => { location.hash = homeDe(P ? P.tipo : tipoActual); };
+$("tipos").addEventListener("click", (e) => { const t = e.target.closest("[data-tipo]"); if (t) location.hash = homeDe(t.dataset.tipo); });
 
 /* =====================================================================
    INICIO
@@ -422,8 +462,11 @@ $("volver").onclick = () => { location.hash = "#/"; };
 async function mostrarHome() {
   $("vHome").hidden = false; $("vProj").hidden = true; $("crumb").hidden = true;
   $("estado").hidden = true; $("saveState").textContent = "";
-  document.title = "flow-mackenzie";
-  await Promise.all([cargarProyectos(), cargarRefs(), cargarCuentas()]);
+  document.title = `${TIPOS[tipoActual]} · flow-mackenzie`;
+  for (const t of document.querySelectorAll(".tipo")) t.classList.toggle("on", t.dataset.tipo === tipoActual);
+  $("tituloProyectos").textContent = `Proyectos · ${TIPOS[tipoActual]}`;
+  $("cardRefs").hidden = tipoActual !== "camioneras"; $("cardEstilo").hidden = tipoActual !== "stick";
+  await Promise.all([cargarProyectos(), cargarRefs(), cargarCuentas(), cargarEstilo()]);
   clearTimeout(pollTimer); pollTimer = setTimeout(pollHome, 5000);
 }
 async function pollHome() { if (!$("vHome").hidden) { await cargarProyectos(); pollTimer = setTimeout(pollHome, 5000); } }
@@ -431,6 +474,9 @@ async function pollHome() { if (!$("vHome").hidden) { await cargarProyectos(); p
 async function cargarProyectos() {
   let lista = [];
   try { lista = (await api("/api/proyectos")).proyectos; } catch (e) { toast(e.message); }
+  $("cntCamioneras").textContent = lista.filter(p => (p.tipo || "camioneras") === "camioneras").length;
+  $("cntStick").textContent = lista.filter(p => p.tipo === "stick").length;
+  lista = lista.filter(p => (p.tipo || "camioneras") === tipoActual);
   $("proyectos").innerHTML = lista.length ? lista.map(p => `
     <div class="pcard">
       <div class="cover" data-abrir="${esc(p.name)}" style="${p.thumb ? `background-image:url('${esc(p.thumb)}')` : ""}">
@@ -470,12 +516,70 @@ $("proyectos").addEventListener("click", async (e) => {
 $("crear").onclick = async () => {
   const name = $("nuevoNombre").value.trim().replace(/\s+/g, "_");
   try {
-    const r = await api("/api/proyecto/crear", {name});
+    const r = await api("/api/proyecto/crear", {name, tipo: tipoActual});
     $("nuevoNombre").value = "";
     location.hash = `#/p/${encodeURIComponent(r.name)}/guion`;
   } catch (e) { toast(e.message); }
 };
 $("nuevoNombre").addEventListener("keydown", (e) => { if (e.key === "Enter") $("crear").click(); });
+
+/* ---------- Estilo visual (Videos Stick) ---------- */
+let estiloUrl = null;
+async function cargarEstilo() {
+  try { estiloUrl = (await api("/api/estilo")).url; } catch { estiloUrl = null; }
+  for (const id of ["estiloBox", "estiloMini"]) {
+    const el = $(id); el.classList.toggle("has", !!estiloUrl);
+    el.style.backgroundImage = estiloUrl ? `url('${estiloUrl}')` : "";
+    el.textContent = estiloUrl ? "" : (id === "estiloBox" ? "Clic para subir la imagen de estilo" : "Falta: súbela en el inicio (Videos Stick)");
+  }
+  $("estiloBorrar").hidden = !estiloUrl;
+}
+$("estiloBox").onclick = () => $("estiloFile").click();
+$("estiloCambiar").onclick = () => $("estiloFile").click();
+$("estiloFile").onchange = async () => {
+  const f = $("estiloFile").files[0]; $("estiloFile").value = ""; if (!f) return;
+  try { await api("/api/estilo", {filename: f.name, data: await leerArchivo(f)}); toast("Estilo visual guardado."); } catch (e) { toast(e.message); }
+  cargarEstilo();
+};
+$("estiloBorrar").onclick = async () => {
+  if (!confirm("¿Quitar la imagen de estilo visual de Videos Stick?")) return;
+  await api("/api/estilo/borrar", {}); cargarEstilo();
+};
+
+/* ---------- Personajes (por proyecto, Videos Stick) ---------- */
+let pjDestino = null;
+function refsDisponibles() { return P && P.tipo === "stick" ? P.personajes.map(x => x.name) : refsActuales; }
+function pintarPersonajes() {
+  $("pjs").innerHTML = P.personajes.map(x => `<div class="ref" data-pj="${esc(x.name)}" title="Clic para cambiar la foto">
+      <img src="${esc(x.url)}" alt=""><div class="nm"><span>${esc(x.name)}</span><button class="x" data-pj-del="${esc(x.name)}" title="Quitar personaje">🗑</button></div></div>`).join("")
+    + `<div class="ref" data-pj-nuevo="1"><div class="ph">+</div><div class="nm"><span class="faint">nuevo</span></div></div>`;
+}
+async function recargarPersonajes() {
+  const s = await api(`/api/proyecto?name=${encodeURIComponent(P.name)}`);
+  P.personajes = s.personajes || []; pintarPersonajes(); pintarPlanos(); validar();
+}
+$("pjs").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-pj-del]");
+  if (del) {
+    e.stopPropagation();
+    if (!confirm(`¿Quitar el personaje «${del.dataset.pjDel}» de este proyecto?`)) return;
+    await api("/api/personaje/borrar", {name: P.name, personaje: del.dataset.pjDel}); return recargarPersonajes();
+  }
+  const c = e.target.closest(".ref"); if (!c) return;
+  if (c.dataset.pjNuevo) { $("pjNombre").focus(); return toast("Escribe el nombre del personaje y pulsa Añadir."); }
+  pjDestino = c.dataset.pj; $("pjFile").click();
+});
+$("pjAdd").onclick = () => {
+  const n = $("pjNombre").value.trim().toLowerCase().replace(/[^\w-]/g, "_");
+  if (!n) return toast("Escribe un nombre para el personaje.");
+  pjDestino = n; $("pjFile").click();
+};
+$("pjFile").onchange = async () => {
+  const f = $("pjFile").files[0]; $("pjFile").value = ""; if (!f || !pjDestino) return;
+  try { await api("/api/personaje", {name: P.name, personaje: pjDestino, filename: f.name, data: await leerArchivo(f)}); $("pjNombre").value = ""; toast(`Personaje «${pjDestino}» guardado.`); }
+  catch (e) { toast(e.message); }
+  recargarPersonajes();
+};
 
 /* ---------- Referencias ---------- */
 let refDestino = null;
@@ -548,10 +652,14 @@ $("cuentasHome").addEventListener("click", async (e) => {
 async function abrirProyecto(name) {
   let s;
   try { s = await api(`/api/proyecto?name=${encodeURIComponent(name)}&guion=1`); }
-  catch (e) { toast(e.message, 6000); location.hash = "#/"; return false; }
-  P = {name: s.project, ajustes: s.ajustes, estado: s, planos: planosDesdeJobs(s.guion.jobs || [])};
+  catch (e) { toast(e.message, 6000); location.hash = homeDe(tipoActual); return false; }
+  P = {name: s.project, ajustes: s.ajustes, estado: s, planos: planosDesdeJobs(s.guion.jobs || []),
+       tipo: s.ajustes.tipo || "camioneras", personajes: s.personajes || []};
+  tipoActual = P.tipo;
   $("vHome").hidden = true; $("vProj").hidden = false; $("crumb").hidden = false; $("estado").hidden = false;
-  $("crumbName").textContent = P.name; document.title = `${P.name} · flow-mackenzie`;
+  $("crumbName").textContent = `${TIPOS[P.tipo]} / ${P.name}`; document.title = `${P.name} · flow-mackenzie`;
+  $("cardPersonajes").hidden = P.tipo !== "stick";
+  if (P.tipo === "stick") { await cargarEstilo(); pintarPersonajes(); }
   $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;
   $("musDb").value = P.ajustes.musica_db; $("ducking").value = P.ajustes.ducking; $("transicion").value = P.ajustes.transicion;
   $("srt").checked = P.ajustes.srt !== false; $("subPrevia").checked = !!P.ajustes.subtitulos_previa; seleccion.clear();
@@ -655,7 +763,8 @@ function pintarPlanos() {
     const s = segDe(p), ini = t; t += s;
     const th = thumbDe(p.name);
     tl.push(`<div class="${th ? "" : "sin"}" style="flex:${s}" data-goto="${i}" title="${esc(p.name)} · ~${fmt(ini)}">${i + 1}</div>`);
-    const refsFoto = [...new Set([...refsActuales, ...(p.refs || [])])];
+    const disp = refsDisponibles();
+    const refsFoto = [...new Set([...disp, ...(p.refs || [])])].filter(r => r !== "estilo");
     return `<div class="plano" id="pl${i}">
       <div class="mini-img" style="${th ? `background-image:url('${esc(th)}')` : ""}">${th ? "" : "sin imagen"}</div>
       <div>
@@ -672,7 +781,7 @@ function pintarPlanos() {
         <span class="lbl">Prompt de la foto</span>
         <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
         <div class="bottom">
-          <div><span class="lbl">Referencias</span><div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${refsActuales.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="faint">Sube referencias en el inicio.</span>`}</div></div>
+          <div><span class="lbl">Referencias</span><div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${disp.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="faint">${P.tipo === "stick" ? "Añade personajes a la derecha." : "Sube referencias en el inicio."}</span>`}</div></div>
           <div><span class="lbl">Movimiento</span><select data-i="${i}" data-k="efecto">${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
         </div>
       </div>
@@ -687,8 +796,9 @@ function validar() {
   const e = [];
   P.planos.forEach((p, i) => {
     if (!(p.img || "").trim()) e.push(`Plano ${i + 1}: falta el prompt de la foto.`);
-    for (const r of p.refs || []) if (!refsActuales.includes(r)) e.push(`Plano ${i + 1}: falta la referencia «${r}».`);
+    for (const r of (p.refs || []).filter(r => r !== "estilo")) if (!refsDisponibles().includes(r)) e.push(`Plano ${i + 1}: falta ${P.tipo === "stick" ? "el personaje" : "la referencia"} «${r}».`);
   });
+  if (P.tipo === "stick" && !estiloUrl) e.unshift("Falta la imagen de estilo visual: súbela en la pestaña Videos Stick del inicio.");
   $("errores").textContent = e.join("\n");
   return e;
 }
@@ -717,7 +827,7 @@ $("planos").addEventListener("click", (e) => {
 });
 $("timeline").addEventListener("click", (e) => { const d = e.target.closest("[data-goto]"); if (d) $("pl" + d.dataset.goto).scrollIntoView({behavior: "smooth", block: "center"}); });
 $("addPlano").onclick = () => {
-  P.planos.push({name: "", refs: ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: ""});
+  P.planos.push({name: "", refs: P.tipo === "stick" ? [] : ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: ""});
   refrescarEditor(); $("pl" + (P.planos.length - 1)).scrollIntoView({behavior: "smooth", block: "center"});
 };
 function importarJson(txt) {
@@ -736,6 +846,15 @@ $("cargar").onclick = () => $("jsonFile").click();
 $("jsonFile").onchange = async () => { const f = $("jsonFile").files[0]; $("jsonFile").value = ""; if (f && importarJson(await f.text())) toast("Guion cargado."); };
 $("ejemplo").onclick = () => {
   if (P.planos.length && !confirm("¿Sustituir los planos actuales por el ejemplo?")) return;
+  if (P.tipo === "stick") {
+    const pj = P.personajes.map(x => x.name);
+    P.planos = [
+      {name: "", refs: pj.slice(0, 1), efecto: "", texto: "En 1815, un hombre volvió del exilio con solo mil soldados.",
+       img: "Un personaje de palo con sombrero bicornio desembarca en una playa al amanecer, detrás un pequeño barco y un grupo de soldados de palo. Plano general, fondo sencillo."},
+      {name: "", refs: pj.slice(0, 1), efecto: "", texto: "Y en cien días volvió a gobernar Francia.",
+       img: "El mismo personaje de palo sentado en un trono, con un mapa de Francia detrás y una multitud de personajes de palo celebrando. Plano medio."}];
+    return refrescarEditor();
+  }
   P.planos = [
     {name: "", refs: ["mackenzie", "cabina"], efecto: "", texto: "Son las seis de la mañana y ya estoy en la cabina.",
      img: "La mujer de la hoja de personaje (misma cara, pelo y ropa) sentada en el asiento del conductor de la cabina de la referencia, estirándose con una taza de café en la mano. Luz suave de amanecer por el parabrisas. Plano medio lateral, cámara fija, foto realista."},
