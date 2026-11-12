@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>flow-mackenzie</title>
+<title>GoogleFlowKillerVideos</title>
 <style>
   :root {
     --bg: #0d0e10; --panel: #16181b; --panel2: #1e2125; --panel3: #262a2f; --line: #2a2e33; --line2: #3a3f46;
@@ -175,7 +175,7 @@
 </head>
 <body>
 <header>
-  <div class="logo" id="goHome">flow<span>-</span>mackenzie</div>
+  <div class="logo" id="goHome">GoogleFlow<span>Killer</span>Videos</div>
   <div class="crumb" id="crumb" hidden><span>/</span><b id="crumbName"></b></div>
   <div class="spacer"></div>
   <span class="save" id="saveState"></span>
@@ -225,6 +225,7 @@
         </section>
         <section class="card">
           <h2>Cuentas de Flow</h2>
+          <p class="faint" style="margin:-6px 0 8px">Sirven para todas las pestañas: las que marques se usan en cualquier proyecto.</p>
           <div id="cuentasHome"></div>
           <div class="row" style="margin-top:10px">
             <input type="text" id="cuentaNueva" placeholder="Nombre de cuenta nueva" style="flex:1">
@@ -462,7 +463,7 @@ $("tipos").addEventListener("click", (e) => { const t = e.target.closest("[data-
 async function mostrarHome() {
   $("vHome").hidden = false; $("vProj").hidden = true; $("crumb").hidden = true;
   $("estado").hidden = true; $("saveState").textContent = "";
-  document.title = `${TIPOS[tipoActual]} · flow-mackenzie`;
+  document.title = `${TIPOS[tipoActual]} · GoogleFlowKillerVideos`;
   for (const t of document.querySelectorAll(".tipo")) t.classList.toggle("on", t.dataset.tipo === tipoActual);
   $("tituloProyectos").textContent = `Proyectos · ${TIPOS[tipoActual]}`;
   $("cardRefs").hidden = tipoActual !== "camioneras"; $("cardEstilo").hidden = tipoActual !== "stick";
@@ -657,7 +658,7 @@ async function abrirProyecto(name) {
        tipo: s.ajustes.tipo || "camioneras", personajes: s.personajes || []};
   tipoActual = P.tipo;
   $("vHome").hidden = true; $("vProj").hidden = false; $("crumb").hidden = false; $("estado").hidden = false;
-  $("crumbName").textContent = `${TIPOS[P.tipo]} / ${P.name}`; document.title = `${P.name} · flow-mackenzie`;
+  $("crumbName").textContent = `${TIPOS[P.tipo]} / ${P.name}`; document.title = `${P.name} · GoogleFlowKillerVideos`;
   $("cardPersonajes").hidden = P.tipo !== "stick";
   if (P.tipo === "stick") { await cargarEstilo(); pintarPersonajes(); }
   $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;

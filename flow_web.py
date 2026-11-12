@@ -1,5 +1,5 @@
 """
-flow_web.py - Web local de flow-mackenzie.
+flow_web.py - Web local de GoogleFlowKillerVideos.
 
   python flow_web.py            -> abre http://localhost:8765 en tu navegador
 
@@ -670,7 +670,7 @@ def main() -> int:
     OUT_DIR.mkdir(exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"
-    print(f"flow-mackenzie web en {url}  (Ctrl+C para cerrar)")
+    print(f"GoogleFlowKillerVideos en {url}  (Ctrl+C para cerrar)")
     threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
