@@ -195,8 +195,11 @@ async def _set_duration(page, panel, seconds: int) -> None:
             break
     final = await slider.evaluate(read)
     if final != seconds:
-        raise RuntimeError(f"No pude poner la duración en {seconds} s (quedó en {final} s).")
-    print(f"    [config] Duración: {final} s")
+        # El modelo no admite esa duración: se usa la más cercana (el montaje
+        # ajusta luego el clip a lo que dura su frase).
+        print(f"    [config] Aviso: este modelo no admite {seconds} s; uso {final} s.")
+    else:
+        print(f"    [config] Duración: {final} s")
 
 
 async def _set_resolution(panel, resolution: str) -> None:

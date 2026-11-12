@@ -47,7 +47,9 @@ SUBPROC_ENV = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8
 NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": "fundido",
                "srt": True, "subtitulos_previa": False, "tipo": "camioneras",
-               "musica_db": -14, "ducking": "media"}
+               "musica_db": -14, "ducking": "media",
+               "video_model": "Omni 1.2 Flash", "video_duracion": 6}
+VIDEO_MIN, VIDEO_MAX = 4, 8                  # duración de los clips que se piden a Flow
 # Archivos que no se copian al duplicar un proyecto
 NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
 
@@ -84,6 +86,12 @@ def find_image(pdir: Path, name: str) -> Path | None:
     for ext in IMG_EXT:
         hits += [h for h in pdir.rglob(f"{name}{ext}")
                  if not (set(h.parts) & (NO_COPIAR | {"personajes"}))]
+    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+
+
+def find_video(pdir: Path, name: str) -> Path | None:
+    """El vídeo más reciente de un plano (plano01.mp4 en cualquier carpeta de cuenta)."""
+    hits = [h for h in pdir.rglob(f"{name}.mp4") if not (set(h.parts) & NO_COPIAR)]
     return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
 
 
@@ -158,7 +166,9 @@ class Job:
         self.proc: subprocess.Popen | None = None
         self.project = None
         self.log: list[str] = []
-        self.planos: dict[str, dict] = {}     # name -> {cuenta, estado, detalle}
+        self.planos: dict[str, dict] = {}     # name -> {cuenta, estado, detalle} (imágenes)
+        self.vplanos: dict[str, dict] = {}    # lo mismo para los vídeos
+        self.kind = "imagen"
         self.current: dict[str, str] = {}
         self.links: dict[str, str] = {}
         self.finished = None
@@ -170,6 +180,7 @@ class Job:
     def _reset(self, project: str) -> None:
         if self.project != project:
             self.project, self.log, self.planos, self.links = project, [], {}, {}
+            self.vplanos = {}
         self.current, self.finished = {}, None
 
     def start(self, project: str, cuentas: list[str], solo_faltan: bool = False,
@@ -236,12 +247,71 @@ class Job:
         _write_json(jobfile, lote)
         with self.lock:
             self._reset(project)
+            self.kind = "imagen"
             self.log, self.links = [], {}
             self.planos = {}
             for g_idx, group in enumerate(flow_multi.group_jobs(lote["jobs"])):
                 for j in group:
                     self.planos[j["name"]] = {"cuenta": cuentas[g_idx % len(cuentas)],
                                               "estado": "pendiente", "detalle": ""}
+        self._launch(jobfile, cuentas)
+
+    def start_videos(self, project: str, cuentas: list[str], solo: list[str] | None = None,
+                     solo_faltan: bool = False) -> None:
+        """Anima en Flow las imágenes ya hechas con su «prompt de animación».
+        Cada clip se pide con la duración de su frase (si ya hay tiempos)."""
+        if self.running:
+            raise RuntimeError(f"Ya se está generando algo del proyecto «{self.project}».")
+        pdir = _pdir(project)
+        guion = load_guion(project)
+        planos = [j for j in guion["jobs"] if j.get("type", "image") == "image"]
+        if solo:
+            planos = [j for j in planos if j["name"] in set(solo)]
+        sin_img = [j["name"] for j in planos if not find_image(pdir, j["name"])]
+        planos = [j for j in planos if find_image(pdir, j["name"])]
+        if solo_faltan:
+            planos = [j for j in planos if not find_video(pdir, j["name"])]
+        if not planos:
+            raise RuntimeError("No hay imágenes para animar" +
+                               (f" (faltan las imágenes de {', '.join(sin_img)})." if sin_img else "."))
+        accounts = flow_multi.list_accounts()
+        cuentas = [c for c in cuentas if c in accounts][:len(planos)]
+        if not cuentas:
+            raise RuntimeError("Ninguna de las cuentas elegidas tiene sesión.")
+        aj = load_ajustes(project)
+        # Duración de cada frase según los tiempos calculados (paso Audio)
+        durs = {}
+        t = _read_json(pdir / "montaje_tiempos.json", None) or {}
+        for p in t.get("planos", []):
+            durs[p["name"]] = float(p["t1"]) - float(p["t0"])
+        jobs = []
+        for j in planos:
+            d = durs.get(j["name"])
+            seg = int(aj.get("video_duracion") or 6) if d is None else int(-(-d // 1))
+            seg = max(VIDEO_MIN, min(VIDEO_MAX, seg))
+            anim = (j.get("anim") or "").strip() or "Movimiento de cámara suave y natural, la escena cobra vida sin cambiar la composición."
+            jobs.append({"type": "video", "name": j["name"], "count": 1, "duration": seg,
+                         "start_ref": str(find_image(pdir, j["name"]).resolve()), "prompt": anim})
+        lote = {"project": _safe_name(project), "references": {},
+                "defaults": {"ratio": aj["ratio"], "video_model": aj["video_model"],
+                             "video_resolution": "720p", "video_retries": 2},
+                "jobs": jobs}
+        jobfile = pdir / "_cuentas" / "_lote_videos.json"
+        jobfile.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(jobfile, lote)
+        with self.lock:
+            self._reset(project)
+            self.kind = "video"
+            self.log, self.links = [], {}
+            for p in list(self.vplanos):
+                if p in {j["name"] for j in jobs}:
+                    del self.vplanos[p]
+            for g_idx, group in enumerate(flow_multi.group_jobs(jobs)):
+                for j in group:
+                    self.vplanos[j["name"]] = {"cuenta": cuentas[g_idx % len(cuentas)],
+                                               "estado": "pendiente", "detalle": f"{j['duration']} s"}
+            if sin_img and not solo:
+                self.log.append(f"Sin imagen (no se animan): {', '.join(sin_img)}")
         self._launch(jobfile, cuentas)
 
     def _launch(self, jobfile: Path, cuentas: list[str]) -> None:
@@ -261,21 +331,22 @@ class Job:
             line = raw.decode("utf-8", errors="replace").rstrip()
             with self.lock:
                 self.log = (self.log + [line])[-2000:]
+                tgt = self.vplanos if self.kind == "video" else self.planos
                 if m := self._RE_JOB.match(line):
                     self.current[m["c"]] = m["n"]
-                    self.planos.setdefault(m["n"], {}).update(estado="generando", cuenta=m["c"])
+                    tgt.setdefault(m["n"], {}).update(estado="generando", cuenta=m["c"])
                 elif m := self._RE_OK.match(line):
                     name = self.current.get(m["c"])
-                    if name in self.planos:
-                        self.planos[name].update(estado="hecho", detalle=m["f"])
+                    if name in tgt:
+                        tgt[name].update(estado="hecho", detalle=m["f"])
                 elif m := self._RE_ERR.match(line):
-                    self.planos.setdefault(m["n"], {}).update(estado="error", detalle=m["e"])
+                    tgt.setdefault(m["n"], {}).update(estado="error", detalle=m["e"])
                 elif m := self._RE_URL.match(line):
                     self.links[m["c"]] = m["u"]
         proc.wait()
         with self.lock:
             self.finished = datetime.now().isoformat(timespec="seconds")
-            for p in self.planos.values():
+            for p in (self.vplanos if self.kind == "video" else self.planos).values():
                 if p.get("estado") in ("pendiente", "generando"):
                     p["estado"] = "sin terminar"
 
@@ -391,8 +462,17 @@ def project_state(project: str, with_guion: bool = False) -> dict:
                     item["estado"] = "hecho"
             if img:
                 item["thumb"] = _url(img)
+            vid = find_video(pdir, name)
+            v = {"estado": "hecho" if vid else "", "detalle": ""}
+            if live and name in JOB.vplanos:
+                v.update({k: x for k, x in JOB.vplanos[name].items() if x is not None})
+                if v["estado"] == "sin terminar" and vid:
+                    v["estado"] = "hecho"
+            if vid:
+                v["url"] = _url(vid)
+            item["video"] = v
             planos.append(item)
-        gen = {"running": JOB.running and live, "otro": JOB.project if JOB.running and not live else None,
+        gen = {"running": JOB.running and live, "kind": JOB.kind, "otro": JOB.project if JOB.running and not live else None,
                "log": JOB.log[-300:] if live else [], "links": JOB.links if live else {},
                "finished": JOB.finished if live else None}
     with RENDER.lock:
@@ -674,6 +754,13 @@ class Handler(BaseHTTPRequestHandler):
             if planos:
                 with JOB.lock:
                     JOB.log.insert(0, f"===== Rehacer {', '.join(planos)} =====")
+            return self._json({"ok": True})
+        if path == "/api/videos":
+            cuentas = [c for c in data.get("cuentas", []) if c] or flow_multi.list_accounts()
+            planos = data.get("planos") or None
+            JOB.start_videos(name, cuentas, solo=planos, solo_faltan=bool(data.get("solo_faltan")))
+            with JOB.lock:
+                JOB.log.insert(0, "===== Vídeos " + (", ".join(planos) if planos else "de todos los planos") + " =====")
             return self._json({"ok": True})
         if path == "/api/parar":
             if JOB.project == _safe_name(name):

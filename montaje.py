@@ -100,7 +100,7 @@ def pieces_from_guion(jobs: list[dict]) -> list[dict]:
     for j in jobs:
         if j.get("type", "image") == "image":
             piece = {"name": j["name"], "image": j["name"], "texto": j.get("texto", ""),
-                     "efecto": j.get("efecto")}
+                     "efecto": j.get("efecto"), "usar": j.get("usar", "imagen")}
             pieces.append(piece)
             by_name[j["name"]] = piece
     for j in jobs:
@@ -267,10 +267,30 @@ def motion(efecto: str, frames: int) -> tuple[str, str, str]:
     return f"1+{ZOOM}*{ease}", cx, cy
 
 
+def render_video_piece(p: dict, out: Path, W: int, H: int, seconds: float, enc: list[str]) -> str:
+    """El clip de Flow ajustado a lo que dura su frase: si sobra se corta; si
+    falta se ralentiza (hasta x2) y, si aún falta, se congela el último fotograma."""
+    clip = duration(p["video_path"])
+    frames = max(int(round(seconds * FPS)), 1)
+    factor = 1.0
+    if clip > 0 and clip < seconds:
+        factor = min(seconds / clip, 2.0)
+    resto = max(seconds - clip * factor, 0) + 0.5
+    vf = (f"setpts={factor:.4f}*PTS,fps={FPS},"
+          f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,"
+          f"tpad=stop_mode=clone:stop_duration={resto:.3f}")
+    run(["-i", str(p["video_path"]), "-vf", vf, *enc, "-frames:v", str(frames), str(out)])
+    if factor > 1.001:
+        return f"vídeo {clip:.1f}s ralentizado x{factor:.2f}" + (" + congelado" if clip * factor < seconds - 0.05 else "")
+    return f"vídeo {clip:.1f}s" + (" recortado" if clip > seconds + 0.05 else "")
+
+
 def render_piece(p: dict, out: Path, W: int, H: int, seconds: float) -> str:
     frames = max(int(round(seconds * FPS)), 1)
     enc = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
            "-pix_fmt", "yuv420p", "-r", str(FPS)]
+    if p.get("usar") == "video" and p.get("video_path"):
+        return render_video_piece(p, out, W, H, seconds, enc)
     if not p.get("image_path"):
         run(["-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r={FPS}", *enc,
              "-frames:v", str(frames), str(out)])
@@ -372,6 +392,9 @@ def main() -> int:
     print(f"MONTAJE: {len(pieces)} planos · audio {audio.name}")
     for k, p in enumerate(pieces):
         p["image_path"] = find_media(folder, p["image"], (".png", ".jpg", ".jpeg", ".webp"))
+        p["video_path"] = find_media(folder, p["image"], (".mp4",)) if p["usar"] == "video" else None
+        if p["usar"] == "video" and not p["video_path"]:
+            print(f"  AVISO: {p['name']} está marcado como vídeo pero no hay vídeo; uso la imagen.")
         p["efecto"] = p.get("efecto") or EFECTOS[k % len(EFECTOS)]
         p["natural"] = 4.0
     missing = [p["name"] for p in pieces if not p.get("image_path")]
@@ -396,6 +419,7 @@ def main() -> int:
                "planos": [
         {"name": p["name"], "t0": round(p["t0"], 3), "t1": round(p["t1"], 3), "efecto": p["efecto"],
          "texto": p.get("texto", ""),
+         "video": p["video_path"].relative_to(folder).as_posix() if p.get("video_path") else None,
          "imagen": p["image_path"].relative_to(folder).as_posix() if p.get("image_path") else None}
         for p in pieces]}
     (folder / "montaje_tiempos.json").write_text(json.dumps(tiempos, ensure_ascii=False, indent=2), encoding="utf-8")
