@@ -204,14 +204,23 @@
       </div>
       <aside>
         <section class="card" id="cardEstilo" hidden>
-          <h2>Estilo visual</h2>
-          <div class="estilo-box" id="estiloBox">Clic para subir la imagen de estilo</div>
+          <h2>Estilo y personajes comunes</h2>
+          <div class="lbl" style="margin-top:0">Estilo por defecto (opcional)</div>
+          <div class="estilo-box" id="estiloBox">Clic para subir un estilo por defecto</div>
           <div class="row" style="margin-top:10px">
             <button id="estiloCambiar">Subir / cambiar…</button>
             <button class="ghost danger mini" id="estiloBorrar" hidden>Quitar</button>
           </div>
-          <p class="faint">Se añade sola como referencia a <b>todas</b> las imágenes de Videos Stick, para que todo salga con el mismo estilo. Los personajes se suben dentro de cada proyecto.</p>
+          <p class="faint">Cada proyecto lleva su propio estilo visual (se sube dentro del proyecto). Este solo se usa en los proyectos que no tengan uno.</p>
           <input type="file" id="estiloFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+          <div class="lbl" style="margin-top:14px">Personajes comunes</div>
+          <div class="pjs" id="pjsComunes"></div>
+          <div class="row" style="margin-top:10px">
+            <input type="text" id="pjcNombre" placeholder="Nombre (p. ej. narrador)" style="flex:1">
+            <button id="pjcAdd">Añadir</button>
+          </div>
+          <input type="file" id="pjcFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+          <p class="faint">Disponibles en todos los proyectos Stick. Los personajes de un solo vídeo se suben dentro de su proyecto.</p>
         </section>
         <section class="card" id="cardRefs">
           <h2>Referencias</h2>
@@ -272,7 +281,16 @@
         </section>
         <aside class="sticky">
           <section class="card" id="cardPersonajes" hidden>
-            <h2>Personajes de este vídeo</h2>
+            <h2>Estilo visual de este vídeo</h2>
+            <div class="estilo-box" id="estiloProj">Clic para subir el estilo visual de este vídeo</div>
+            <div class="row" style="margin-top:8px">
+              <button class="mini" id="estiloProjCambiar">Subir / cambiar…</button>
+              <button class="ghost danger mini" id="estiloProjBorrar" hidden>Quitar</button>
+              <span class="faint" id="estiloProjNota"></span>
+            </div>
+            <input type="file" id="estiloProjFile" accept=".png,.jpg,.jpeg,.webp" hidden>
+            <p class="faint">Se añade solo como referencia a todas las imágenes de este vídeo.</p>
+            <h2 style="margin-top:18px">Personajes de este vídeo</h2>
             <div class="pjs" id="pjs"></div>
             <div class="row" style="margin-top:10px">
               <input type="text" id="pjNombre" placeholder="Nombre (p. ej. napoleon)" style="flex:1">
@@ -280,8 +298,9 @@
             </div>
             <input type="file" id="pjFile" accept=".png,.jpg,.jpeg,.webp" hidden>
             <p class="faint">Márcalos en cada plano como referencia. Clic en uno para cambiar su foto.</p>
-            <div class="lbl">Estilo visual (se añade solo)</div>
-            <div class="estilo-box" id="estiloMini" style="cursor:default"></div>
+            <div class="lbl">Personajes comunes (de la pestaña)</div>
+            <div class="faint" id="pjsComunesMini">—</div>
+
           </section>
           <section class="card">
             <h2>Ajustes de imagen</h2>
@@ -467,7 +486,7 @@ async function mostrarHome() {
   for (const t of document.querySelectorAll(".tipo")) t.classList.toggle("on", t.dataset.tipo === tipoActual);
   $("tituloProyectos").textContent = `Proyectos · ${TIPOS[tipoActual]}`;
   $("cardRefs").hidden = tipoActual !== "camioneras"; $("cardEstilo").hidden = tipoActual !== "stick";
-  await Promise.all([cargarProyectos(), cargarRefs(), cargarCuentas(), cargarEstilo()]);
+  await Promise.all([cargarProyectos(), cargarRefs(), cargarCuentas(), cargarEstilo(), cargarComunes()]);
   clearTimeout(pollTimer); pollTimer = setTimeout(pollHome, 5000);
 }
 async function pollHome() { if (!$("vHome").hidden) { await cargarProyectos(); pollTimer = setTimeout(pollHome, 5000); } }
@@ -528,11 +547,9 @@ $("nuevoNombre").addEventListener("keydown", (e) => { if (e.key === "Enter") $("
 let estiloUrl = null;
 async function cargarEstilo() {
   try { estiloUrl = (await api("/api/estilo")).url; } catch { estiloUrl = null; }
-  for (const id of ["estiloBox", "estiloMini"]) {
-    const el = $(id); el.classList.toggle("has", !!estiloUrl);
-    el.style.backgroundImage = estiloUrl ? `url('${estiloUrl}')` : "";
-    el.textContent = estiloUrl ? "" : (id === "estiloBox" ? "Clic para subir la imagen de estilo" : "Falta: súbela en el inicio (Videos Stick)");
-  }
+  const el = $("estiloBox"); el.classList.toggle("has", !!estiloUrl);
+  el.style.backgroundImage = estiloUrl ? `url('${estiloUrl}')` : "";
+  el.textContent = estiloUrl ? "" : "Clic para subir un estilo por defecto";
   $("estiloBorrar").hidden = !estiloUrl;
 }
 $("estiloBox").onclick = () => $("estiloFile").click();
@@ -543,13 +560,68 @@ $("estiloFile").onchange = async () => {
   cargarEstilo();
 };
 $("estiloBorrar").onclick = async () => {
-  if (!confirm("¿Quitar la imagen de estilo visual de Videos Stick?")) return;
+  if (!confirm("¿Quitar el estilo por defecto de Videos Stick?")) return;
   await api("/api/estilo/borrar", {}); cargarEstilo();
+};
+
+/* ---------- Estilo del proyecto (Videos Stick) ---------- */
+function pintarEstiloProj() {
+  const propio = P.estilo, usado = propio || estiloUrl, el = $("estiloProj");
+  el.classList.toggle("has", !!usado);
+  el.style.backgroundImage = usado ? `url('${usado}')` : "";
+  el.textContent = usado ? "" : "Clic para subir el estilo visual de este vídeo";
+  $("estiloProjBorrar").hidden = !propio;
+  $("estiloProjNota").textContent = propio ? "" : (estiloUrl ? "Usando el estilo por defecto" : "Falta el estilo");
+}
+$("estiloProj").onclick = () => $("estiloProjFile").click();
+$("estiloProjCambiar").onclick = () => $("estiloProjFile").click();
+$("estiloProjFile").onchange = async () => {
+  const f = $("estiloProjFile").files[0]; $("estiloProjFile").value = ""; if (!f) return;
+  try { await api("/api/estilo", {name: P.name, filename: f.name, data: await leerArchivo(f)}); toast("Estilo visual del vídeo guardado."); }
+  catch (e) { toast(e.message); }
+  recargarPersonajes();
+};
+$("estiloProjBorrar").onclick = async () => {
+  if (!confirm("¿Quitar el estilo visual de este vídeo?")) return;
+  await api("/api/estilo/borrar", {name: P.name}); recargarPersonajes();
 };
 
 /* ---------- Personajes (por proyecto, Videos Stick) ---------- */
 let pjDestino = null;
-function refsDisponibles() { return P && P.tipo === "stick" ? P.personajes.map(x => x.name) : refsActuales; }
+let comunes = [];
+function refsDisponibles() {
+  return P && P.tipo === "stick" ? [...new Set([...comunes.map(x => x.name), ...P.personajes.map(x => x.name)])] : refsActuales;
+}
+async function cargarComunes() {
+  try { comunes = (await api("/api/stick/personajes")).personajes; } catch { comunes = []; }
+  $("pjsComunes").innerHTML = comunes.map(x => `<div class="ref" data-pjc="${esc(x.name)}" title="Clic para cambiar la foto">
+      <img src="${esc(x.url)}" alt=""><div class="nm"><span>${esc(x.name)}</span><button class="x" data-pjc-del="${esc(x.name)}" title="Quitar personaje">🗑</button></div></div>`).join("")
+    + `<div class="ref" data-pjc-nuevo="1"><div class="ph">+</div><div class="nm"><span class="faint">nuevo</span></div></div>`;
+  $("pjsComunesMini").textContent = comunes.length ? comunes.map(x => x.name).join(", ") : "Ninguno (se añaden en el inicio, pestaña Videos Stick).";
+}
+let pjcDestino = null;
+$("pjsComunes").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-pjc-del]");
+  if (del) {
+    e.stopPropagation();
+    if (!confirm(`¿Quitar el personaje común «${del.dataset.pjcDel}»? Dejará de estar disponible en todos los proyectos Stick.`)) return;
+    await api("/api/personaje/borrar", {comun: true, personaje: del.dataset.pjcDel}); return cargarComunes();
+  }
+  const c = e.target.closest(".ref"); if (!c) return;
+  if (c.dataset.pjcNuevo) { $("pjcNombre").focus(); return toast("Escribe el nombre del personaje y pulsa Añadir."); }
+  pjcDestino = c.dataset.pjc; $("pjcFile").click();
+});
+$("pjcAdd").onclick = () => {
+  const n = $("pjcNombre").value.trim().toLowerCase().replace(/[^\w-]/g, "_");
+  if (!n) return toast("Escribe un nombre para el personaje.");
+  pjcDestino = n; $("pjcFile").click();
+};
+$("pjcFile").onchange = async () => {
+  const f = $("pjcFile").files[0]; $("pjcFile").value = ""; if (!f || !pjcDestino) return;
+  try { await api("/api/personaje", {comun: true, personaje: pjcDestino, filename: f.name, data: await leerArchivo(f)}); $("pjcNombre").value = ""; toast(`Personaje común «${pjcDestino}» guardado.`); }
+  catch (e) { toast(e.message); }
+  cargarComunes();
+};
 function pintarPersonajes() {
   $("pjs").innerHTML = P.personajes.map(x => `<div class="ref" data-pj="${esc(x.name)}" title="Clic para cambiar la foto">
       <img src="${esc(x.url)}" alt=""><div class="nm"><span>${esc(x.name)}</span><button class="x" data-pj-del="${esc(x.name)}" title="Quitar personaje">🗑</button></div></div>`).join("")
@@ -557,7 +629,7 @@ function pintarPersonajes() {
 }
 async function recargarPersonajes() {
   const s = await api(`/api/proyecto?name=${encodeURIComponent(P.name)}`);
-  P.personajes = s.personajes || []; pintarPersonajes(); pintarPlanos(); validar();
+  P.personajes = s.personajes || []; P.estilo = s.estilo || null; pintarEstiloProj(); pintarPersonajes(); pintarPlanos(); validar();
 }
 $("pjs").addEventListener("click", async (e) => {
   const del = e.target.closest("[data-pj-del]");
@@ -655,12 +727,12 @@ async function abrirProyecto(name) {
   try { s = await api(`/api/proyecto?name=${encodeURIComponent(name)}&guion=1`); }
   catch (e) { toast(e.message, 6000); location.hash = homeDe(tipoActual); return false; }
   P = {name: s.project, ajustes: s.ajustes, estado: s, planos: planosDesdeJobs(s.guion.jobs || []),
-       tipo: s.ajustes.tipo || "camioneras", personajes: s.personajes || []};
+       tipo: s.ajustes.tipo || "camioneras", personajes: s.personajes || [], estilo: s.estilo || null};
   tipoActual = P.tipo;
   $("vHome").hidden = true; $("vProj").hidden = false; $("crumb").hidden = false; $("estado").hidden = false;
   $("crumbName").textContent = `${TIPOS[P.tipo]} / ${P.name}`; document.title = `${P.name} · GoogleFlowKillerVideos`;
   $("cardPersonajes").hidden = P.tipo !== "stick";
-  if (P.tipo === "stick") { await cargarEstilo(); pintarPersonajes(); }
+  if (P.tipo === "stick") { await Promise.all([cargarEstilo(), cargarComunes()]); pintarEstiloProj(); pintarPersonajes(); }
   $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;
   $("musDb").value = P.ajustes.musica_db; $("ducking").value = P.ajustes.ducking; $("transicion").value = P.ajustes.transicion;
   $("srt").checked = P.ajustes.srt !== false; $("subPrevia").checked = !!P.ajustes.subtitulos_previa; seleccion.clear();
@@ -799,7 +871,7 @@ function validar() {
     if (!(p.img || "").trim()) e.push(`Plano ${i + 1}: falta el prompt de la foto.`);
     for (const r of (p.refs || []).filter(r => r !== "estilo")) if (!refsDisponibles().includes(r)) e.push(`Plano ${i + 1}: falta ${P.tipo === "stick" ? "el personaje" : "la referencia"} «${r}».`);
   });
-  if (P.tipo === "stick" && !estiloUrl) e.unshift("Falta la imagen de estilo visual: súbela en la pestaña Videos Stick del inicio.");
+  if (P.tipo === "stick" && !P.estilo && !estiloUrl) e.unshift("Falta el estilo visual de este vídeo: súbelo a la derecha.");
   $("errores").textContent = e.join("\n");
   return e;
 }
@@ -848,7 +920,7 @@ $("jsonFile").onchange = async () => { const f = $("jsonFile").files[0]; $("json
 $("ejemplo").onclick = () => {
   if (P.planos.length && !confirm("¿Sustituir los planos actuales por el ejemplo?")) return;
   if (P.tipo === "stick") {
-    const pj = P.personajes.map(x => x.name);
+    const pj = refsDisponibles();
     P.planos = [
       {name: "", refs: pj.slice(0, 1), efecto: "", texto: "En 1815, un hombre volvió del exilio con solo mil soldados.",
        img: "Un personaje de palo con sombrero bicornio desembarca en una playa al amanecer, detrás un pequeño barco y un grupo de soldados de palo. Plano general, fondo sencillo."},

@@ -101,6 +101,19 @@ def estilo_stick() -> Path | None:
     return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
 
 
+def estilo_proyecto(project: str) -> Path | None:
+    hits = [p for p in _pdir(project).glob("estilo.*") if p.suffix.lower() in IMG_EXT]
+    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+
+
+STICK_PJ_DIR = STICK_DIR / "personajes"      # personajes comunes a todos los vídeos stick
+
+
+def personajes_comunes() -> dict[str, Path]:
+    d = STICK_PJ_DIR
+    return {p.stem: p for p in sorted(d.glob("*")) if p.suffix.lower() in IMG_EXT} if d.exists() else {}
+
+
 def personajes(project: str) -> dict[str, Path]:
     d = _pdir(project) / "personajes"
     return {p.stem: p for p in sorted(d.glob("*")) if p.suffix.lower() in IMG_EXT} if d.exists() else {}
@@ -109,8 +122,9 @@ def personajes(project: str) -> dict[str, Path]:
 def refs_de(project: str) -> dict[str, str]:
     """Referencias que puede usar un proyecto según su tipo."""
     if load_ajustes(project).get("tipo") == "stick":
-        refs = {k: str(v) for k, v in personajes(project).items()}
-        est = estilo_stick()
+        refs = {k: str(v) for k, v in personajes_comunes().items()}
+        refs.update({k: str(v) for k, v in personajes(project).items()})   # los del proyecto mandan
+        est = estilo_proyecto(project) or estilo_stick()     # el del proyecto; si no, el de por defecto
         if est:
             refs["estilo"] = str(est)
         return refs
@@ -186,7 +200,7 @@ class Job:
         if aj.get("tipo") == "stick":
             # El estilo visual va siempre en todas las imágenes
             if "estilo" not in refs:
-                raise RuntimeError("Sube la imagen de estilo visual en la pestaña Videos Stick.")
+                raise RuntimeError("Sube el estilo visual del proyecto (paso 1, a la derecha).")
             jobs = [{**j, "refs": ["estilo"] + [r for r in (j.get("refs") or []) if r != "estilo"],
                      "prompt": j.get("prompt", "") if "estilo" in j.get("prompt", "").lower()
                      else j.get("prompt", "").rstrip(". ") + ". Mismo estilo visual que la imagen de referencia de estilo."}
@@ -374,6 +388,8 @@ def project_state(project: str, with_guion: bool = False) -> dict:
         out["guion"] = g
         out["ajustes"] = load_ajustes(project)
     out["personajes"] = [{"name": k, "url": _url(v)} for k, v in personajes(project).items()]
+    est = estilo_proyecto(project)
+    out["estilo"] = _url(est) if est else None
     return out
 
 
@@ -497,6 +513,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/estilo":
                 est = estilo_stick()
                 return self._json({"url": f"/refs_stick/{est.name}?v={int(est.stat().st_mtime)}" if est else None})
+            if path == "/api/stick/personajes":
+                return self._json({"personajes": [{"name": k, "url": f"/refs_stick/personajes/{v.name}?v={int(v.stat().st_mtime)}"}
+                                                  for k, v in personajes_comunes().items()]})
             if path.startswith("/refs_stick/"):
                 return self._file(STICK_DIR / path[len("/refs_stick/"):], STICK_DIR)
             if path == "/api/proyectos":
@@ -531,34 +550,36 @@ class Handler(BaseHTTPRequestHandler):
                 old.unlink()
             (REFS_DIR / f"{ref}{ext}").write_bytes(base64.b64decode(data["data"]))
             return self._json({"ok": True})
-        if path == "/api/estilo":
+        if path == "/api/estilo":       # con "name": el del proyecto; sin él: el de por defecto
             ext = Path(data.get("filename", "")).suffix.lower()
             if ext not in IMG_EXT:
                 return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
-            STICK_DIR.mkdir(exist_ok=True)
-            for old in STICK_DIR.glob("estilo.*"):
+            d = _pdir(name) if name else STICK_DIR
+            d.mkdir(exist_ok=True)
+            for old in d.glob("estilo.*"):
                 old.unlink()
-            (STICK_DIR / f"estilo{ext}").write_bytes(base64.b64decode(data["data"]))
+            (d / f"estilo{ext}").write_bytes(base64.b64decode(data["data"]))
             return self._json({"ok": True})
         if path == "/api/estilo/borrar":
-            for old in STICK_DIR.glob("estilo.*"):
+            for old in (_pdir(name) if name else STICK_DIR).glob("estilo.*"):
                 old.unlink()
             return self._json({"ok": True})
         if path == "/api/personaje":
-            pj = _safe_name(data.get("personaje", ""))
+            pj = _safe_name(data.get("personaje", "")).lower()
             if pj.lower() == "estilo" or re.fullmatch(r"plano\d+", pj):
                 return self._json({"error": "Ese nombre está reservado; elige otro."}, 400)
             ext = Path(data.get("filename", "")).suffix.lower()
             if ext not in IMG_EXT:
                 return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
-            d = _pdir(name) / "personajes"
+            d = STICK_PJ_DIR if data.get("comun") else _pdir(name) / "personajes"
             d.mkdir(parents=True, exist_ok=True)
             for old in d.glob(f"{pj}.*"):
                 old.unlink()
             (d / f"{pj}{ext}").write_bytes(base64.b64decode(data["data"]))
             return self._json({"ok": True})
         if path == "/api/personaje/borrar":
-            for old in (_pdir(name) / "personajes").glob(f"{_safe_name(data.get('personaje', ''))}.*"):
+            d = STICK_PJ_DIR if data.get("comun") else _pdir(name) / "personajes"
+            for old in d.glob(f"{_safe_name(data.get('personaje', ''))}.*"):
                 old.unlink()
             return self._json({"ok": True})
         if path == "/api/ref/borrar":
