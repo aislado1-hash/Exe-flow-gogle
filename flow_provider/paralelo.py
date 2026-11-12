@@ -91,7 +91,7 @@ async def _esperar_tarjeta_nueva(page, before: list[str], name: str, timeout: fl
 
 async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_ref, submit, download,
                               max_par: int = 8, timeout_s: int = 240, log=print,
-                              reintentos: int = 1, _subidas: bool = False) -> dict[str, str]:
+                              reintentos: int = 1, subidas: set | None = None) -> dict[str, str]:
     """items: [{name, prompt, refs:[ruta], out}] en orden. Devuelve {name: ruta | 'ERROR: …'}.
 
     select_mode / add_ref / upload_ref / submit / download: funciones del motor de Flow.
@@ -101,9 +101,12 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
     total = len(items)
     # Subir todas las referencias una vez (con el modo imagen ya configurado)
     await select_mode()
-    if not _subidas:
-        for ref in dict.fromkeys(r for it in items for r in it["refs"]):
+    if subidas is None:
+        subidas = set()
+    for ref in dict.fromkeys(r for it in items for r in it["refs"]):
+        if ref not in subidas:
             await upload_ref(ref)
+            subidas.add(ref)
 
     for c0 in range(0, total, max_par):
         tanda = items[c0:c0 + max_par]
@@ -181,5 +184,5 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
         for it in fallidas:
             it.pop("tile", None)
         out.update(await generar_en_paralelo(fallidas, select_mode, add_ref, upload_ref, submit, download,
-                                             max_par, timeout_s, log, reintentos - 1, _subidas=True))
+                                             max_par, timeout_s, log, reintentos - 1, subidas=subidas))
     return out

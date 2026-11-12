@@ -205,6 +205,25 @@ class Job:
                      "prompt": j.get("prompt", "") if "estilo" in j.get("prompt", "").lower()
                      else j.get("prompt", "").rstrip(". ") + ". Mismo estilo visual que la imagen de referencia de estilo."}
                     for j in jobs]
+        # Escenas: la 1ª imagen de cada escena (en todo el guion) es la referencia
+        # de las demás. Si en este lote no se rehace la 1ª, se usa la que ya existe.
+        bases = {}
+        for j in guion["jobs"]:
+            e = str(j.get("escena") or "").strip()
+            if e and (j.get("type", "image") == "image") and e not in bases:
+                bases[e] = j["name"]
+        nombres_lote = {j["name"] for j in jobs}
+        con_escena = []
+        for j in jobs:
+            e = str(j.get("escena") or "").strip()
+            if e and bases.get(e) and bases[e] != j["name"]:
+                j = {**j, "escena_base": bases[e]}
+                if bases[e] not in nombres_lote:
+                    f = find_image(_pdir(project), bases[e])
+                    if f:
+                        j["escena_ref"] = str(Path(f).resolve())
+            con_escena.append(j)
+        jobs = con_escena
         missing = sorted({r for j in jobs for r in (j.get("refs") or [])} - set(refs))
         if missing:
             raise RuntimeError("Faltan referencias: " + ", ".join(missing))

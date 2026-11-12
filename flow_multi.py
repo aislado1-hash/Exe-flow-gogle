@@ -41,6 +41,7 @@ def group_jobs(jobs: list[dict]) -> list[list[dict]]:
     """Agrupa cada imagen con los vídeos que la usan como fotograma inicial."""
     groups: list[list[dict]] = []
     image_group: dict[str, list[dict]] = {}
+    escena_group: dict[str, list[dict]] = {}
     for i, job in enumerate(jobs, 1):
         jtype = job.get("type", "image")
         name = job.get("name") or f"{jtype}_{i:02d}"
@@ -49,7 +50,17 @@ def group_jobs(jobs: list[dict]) -> list[list[dict]]:
         if jtype == "video" and start in image_group:
             image_group[start].append(job)
             continue
+        esc = str(job.get("escena") or "").strip()
+        if jtype == "image" and esc:
+            # Una escena entera va a la misma cuenta: las demás imágenes usan la
+            # primera de la escena como referencia.
+            if esc in escena_group:
+                escena_group[esc].append(job)
+                image_group[name] = escena_group[esc]
+                continue
         group = [job]
+        if jtype == "image" and esc:
+            escena_group[esc] = group
         groups.append(group)
         if jtype == "image":
             image_group[name] = group

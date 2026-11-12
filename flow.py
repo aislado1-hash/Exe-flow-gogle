@@ -275,7 +275,10 @@ async def _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ra
         items.append({"name": name, "prompt": job.get("prompt", ""),
                       "refs": [references[r] if r in references else r
                                for r in (job.get("refs") or defaults.get("refs") or [])],
-                      "out": _out_path(project_dir, name, "png")})
+                      "out": _out_path(project_dir, name, "png"),
+                      "escena": str(job.get("escena") or "").strip(),
+                      "escena_base": job.get("escena_base"),
+                      "escena_ref": job.get("escena_ref")})
     print(f"Modo paralelo: hasta {max_par} imágenes a la vez en este navegador.")
 
     async def select_mode():
@@ -284,9 +287,52 @@ async def _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ra
     async def download(out, card):
         return await flow.download_latest(out, resolution="1K", is_video=False, card=card)
 
-    res = await generar_en_paralelo(
-        items, select_mode, flow.add_reference_to_prompt, flow.upload_reference,
-        flow.submit_prompt, download, max_par=max_par)
+    # Escenas: primero la 1ª imagen de cada escena (y los planos sueltos); luego
+    # el resto de cada escena, con esa 1ª imagen como referencia.
+    nombres = {it["name"] for it in items}
+    base_de = {}                                  # escena -> nombre de su 1ª imagen
+    for it in items:
+        if it["escena"]:
+            base_de.setdefault(it["escena"], it["escena_base"] or it["name"])
+    fase1, fase2 = [], []
+    for it in items:
+        b = it["escena_base"] or base_de.get(it["escena"])
+        if it["escena"] and b and b != it["name"] and (b in nombres or it["escena_ref"]):
+            it["base"] = b
+            fase2.append(it)
+        else:
+            fase1.append(it)
+
+    subidas: set = set()
+    res = {}
+    if fase2:
+        print(f"Escenas: {len(fase1)} imagen(es) base primero y luego {len(fase2)} que las usan de referencia.")
+    if fase1:
+        res.update(await generar_en_paralelo(
+            fase1, select_mode, flow.add_reference_to_prompt, flow.upload_reference,
+            flow.submit_prompt, download, max_par=max_par, subidas=subidas))
+    if fase2:
+        ref_dir = project_dir / "_escenas"
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        for it in fase2:
+            hecha = res.get(it["base"])
+            origen = hecha if hecha and not str(hecha).startswith("ERROR") else it["escena_ref"]
+            if origen and Path(origen).exists():
+                # Copia con nombre único: así la tarjeta subida a Flow no se confunde
+                # con la imagen generada.
+                copia = ref_dir / f"escena_{_safe(it['escena'])}__{_safe(it['base'])}{Path(origen).suffix}"
+                if not copia.exists() or copia.stat().st_mtime < Path(origen).stat().st_mtime:
+                    shutil.copyfile(origen, copia)
+                it["refs"] = it["refs"] + [str(copia)]
+                if "imagen de referencia de la escena" not in it["prompt"]:
+                    it["prompt"] = (it["prompt"].rstrip(". ") +
+                                    ". Mismo lugar, personajes y ambiente que la imagen de referencia de la escena.")
+            else:
+                print(f"  Aviso: la imagen base de la escena «{it['escena']}» no salió; "
+                      f"{it['name']} se hace sin ella.")
+        res.update(await generar_en_paralelo(
+            fase2, select_mode, flow.add_reference_to_prompt, flow.upload_reference,
+            flow.submit_prompt, download, max_par=max_par, subidas=subidas))
     results = []
     for it in items:
         r = res.get(it["name"], "ERROR: no se envió")

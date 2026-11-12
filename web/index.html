@@ -136,7 +136,7 @@
   .plano .tiempo { color: var(--faint); font-size: 12px; margin-right: auto; }
   .plano input.narr { font-style: italic; }
   .plano .lbl:first-of-type { margin-top: 8px; }
-  .plano .bottom { display: grid; grid-template-columns: 1fr 200px; gap: 10px; align-items: end; }
+  .plano .bottom { display: grid; grid-template-columns: 1fr 110px 200px; gap: 10px; align-items: end; }
   .refsel { display: flex; gap: 6px; flex-wrap: wrap; }
   .refchip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); cursor: pointer; color: var(--muted); user-select: none; }
   .refchip.on { background: #2a2416; color: var(--accent); border-color: #5a4a22; }
@@ -805,7 +805,7 @@ const EFECTOS = {"": "Automático", zoom_in: "Acercar", zoom_out: "Alejar", pane
 function planosDesdeJobs(jobs) {
   return jobs.filter(j => (j.type || "image") === "image").map(j => {
     const v = jobs.find(x => x.type === "video" && x.start && x.start.replace(/\.\w+$/, "") === j.name);
-    return {name: j.name || "", refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || ""};
+    return {name: j.name || "", refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || "", escena: j.escena || ""};
   });
 }
 function asegurarNombres() {
@@ -823,6 +823,7 @@ function jobsDesdePlanos() {
     const job = {type: "image", name: p.name, refs: p.refs || [], prompt: p.img};
     if (p.texto) job.texto = p.texto;
     if (p.efecto) job.efecto = p.efecto;
+    if ((p.escena || "").trim()) job.escena = p.escena.trim();
     return job;
   });
 }
@@ -855,6 +856,7 @@ function pintarPlanos() {
         <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
         <div class="bottom">
           <div><span class="lbl">Referencias</span><div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${disp.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="faint">${P.tipo === "stick" ? "Añade personajes a la derecha." : "Sube referencias en el inicio."}</span>`}</div></div>
+          <div><span class="lbl" title="Los planos con la misma escena usan la primera imagen de esa escena como referencia (mismo lugar y personajes).">Escena</span><input type="text" data-i="${i}" data-k="escena" value="${esc(p.escena || "")}" placeholder="—" title="Mismo nombre = misma escena. La 1ª imagen de la escena se usa de referencia para las demás."></div>
           <div><span class="lbl">Movimiento</span><select data-i="${i}" data-k="efecto">${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
         </div>
       </div>
