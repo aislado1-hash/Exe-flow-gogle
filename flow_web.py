@@ -48,7 +48,7 @@ NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": "fundido",
                "srt": True, "subtitulos_previa": False, "tipo": "camioneras",
                "musica_db": -14, "ducking": "media",
-               "video_model": "Omni 1.2 Flash", "video_duracion": 6}
+               "video_model": "Omni 1.2 Flash", "video_duracion": "auto"}
 VIDEO_MIN, VIDEO_MAX = 4, 8                  # duración de los clips que se piden a Flow
 # Archivos que no se copian al duplicar un proyecto
 NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
@@ -257,7 +257,7 @@ class Job:
         self._launch(jobfile, cuentas)
 
     def start_videos(self, project: str, cuentas: list[str], solo: list[str] | None = None,
-                     solo_faltan: bool = False) -> None:
+                     solo_faltan: bool = False, duracion=None) -> None:
         """Anima en Flow las imágenes ya hechas con su «prompt de animación».
         Cada clip se pide con la duración de su frase (si ya hay tiempos)."""
         if self.running:
@@ -285,9 +285,13 @@ class Job:
         for p in t.get("planos", []):
             durs[p["name"]] = float(p["t1"]) - float(p["t0"])
         jobs = []
+        elegida = str(duracion if duracion is not None else aj.get("video_duracion") or "auto")
         for j in planos:
-            d = durs.get(j["name"])
-            seg = int(aj.get("video_duracion") or 6) if d is None else int(-(-d // 1))
+            if elegida.isdigit():
+                seg = int(elegida)                     # la que eliges tú
+            else:
+                d = durs.get(j["name"])                # según su frase
+                seg = 6 if d is None else int(-(-d // 1))
             seg = max(VIDEO_MIN, min(VIDEO_MAX, seg))
             anim = (j.get("anim") or "").strip() or "Movimiento de cámara suave y natural, la escena cobra vida sin cambiar la composición."
             jobs.append({"type": "video", "name": j["name"], "count": 1, "duration": seg,
@@ -758,7 +762,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/videos":
             cuentas = [c for c in data.get("cuentas", []) if c] or flow_multi.list_accounts()
             planos = data.get("planos") or None
-            JOB.start_videos(name, cuentas, solo=planos, solo_faltan=bool(data.get("solo_faltan")))
+            JOB.start_videos(name, cuentas, solo=planos, solo_faltan=bool(data.get("solo_faltan")),
+                             duracion=data.get("duracion"))
             with JOB.lock:
                 JOB.log.insert(0, "===== Vídeos " + (", ".join(planos) if planos else "de todos los planos") + " =====")
             return self._json({"ok": True})

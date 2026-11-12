@@ -348,7 +348,13 @@
           </section>
           <section class="card">
             <h2>Vídeos (opcional)</h2>
-            <div class="row">
+            <label class="lbl">Duración de cada vídeo</label>
+            <select id="vidDur">
+              <option value="auto">Según su frase (4–8 s)</option>
+              <option value="4">4 s</option><option value="5">5 s</option><option value="6">6 s</option>
+              <option value="7">7 s</option><option value="8">8 s</option>
+            </select>
+            <div class="row" style="margin-top:10px">
               <button id="vidFaltan">🎬 Vídeos que faltan</button>
               <button id="vidSel" disabled>🎬 Vídeo de seleccionadas</button>
             </div>
@@ -356,7 +362,7 @@
               <button class="mini ghost" id="usarTodoVid">Usar vídeo en todas</button>
               <button class="mini ghost" id="usarTodoImg">Usar imagen en todas</button>
             </div>
-            <p class="faint">Anima cada imagen con su <b>prompt de animación</b>. Si ya calculaste los tiempos (paso Audio), cada clip se pide con la duración de su frase (de 4 a 8 s). En cada imagen eliges <b>Imagen</b> o <b>Vídeo</b> para el render; el clip se ajusta a lo que dura su frase.</p>
+            <p class="faint">Anima cada imagen con su <b>prompt de animación</b>. Con «Según su frase», cada clip se pide con lo que dura su frase si ya calculaste los tiempos (paso Audio); si no, de 6 s. Si el modelo no admite esa duración, se usa la más cercana. En cada imagen eliges <b>Imagen</b> o <b>Vídeo</b> para el render; el clip se ajusta a lo que dura su frase.</p>
             <div class="nextbar"><button class="primary" data-go="audio">Siguiente: Audio →</button></div>
           </section>
         </aside>
@@ -753,6 +759,7 @@ async function abrirProyecto(name) {
   if (P.tipo === "stick") { await Promise.all([cargarEstilo(), cargarComunes()]); pintarEstiloProj(); pintarPersonajes(); }
   $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;
   $("vidModel").value = P.ajustes.video_model || "Omni 1.2 Flash";
+  $("vidDur").value = String(P.ajustes.video_duracion || "auto");
   $("musDb").value = P.ajustes.musica_db; $("ducking").value = P.ajustes.ducking; $("transicion").value = P.ajustes.transicion;
   $("srt").checked = P.ajustes.srt !== false; $("subPrevia").checked = !!P.ajustes.subtitulos_previa; seleccion.clear();
   pintarMusDb();
@@ -809,11 +816,11 @@ async function guardarYa() {
 }
 window.addEventListener("beforeunload", (e) => { if (savePending) { guardarYa(); e.preventDefault(); e.returnValue = ""; } });
 function leerAjustes() {
-  return {image_model: $("imgModel").value.trim(), video_model: $("vidModel").value.trim() || "Omni 1.2 Flash", ratio: $("ratio").value, musica_db: +$("musDb").value,
+  return {image_model: $("imgModel").value.trim(), video_model: $("vidModel").value.trim() || "Omni 1.2 Flash", video_duracion: $("vidDur").value, ratio: $("ratio").value, musica_db: +$("musDb").value,
           ducking: $("ducking").value, transicion: $("transicion").value,
           srt: $("srt").checked, subtitulos_previa: $("subPrevia").checked};
 }
-for (const id of ["imgModel", "vidModel", "ratio", "ducking", "transicion", "srt", "subPrevia"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
+for (const id of ["imgModel", "vidModel", "vidDur", "ratio", "ducking", "transicion", "srt", "subPrevia"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
 $("imgModel").addEventListener("input", () => guardar("ajustes"));
 $("vidModel").addEventListener("input", () => guardar("ajustes"));
 $("musDb").addEventListener("input", () => { pintarMusDb(); P.ajustes = leerAjustes(); guardar("ajustes"); });
@@ -1081,9 +1088,10 @@ async function videos(planos, soloFaltan = false) {
   const cuentas = cuentasMarcadas(); if (!cuentas.length) return toast("Elige al menos una cuenta.");
   const sinAnim = P.planos.filter(p => (!planos || planos.includes(p.name)) && !(p.anim || "").trim()).length;
   const txt = planos ? (planos.length === 1 ? `el vídeo de ${planos[0]}` : `${planos.length} vídeos`) : "los vídeos que faltan";
-  if (!confirm(`¿Generar ${txt} en Flow?${sinAnim ? `\n${sinAnim} plano(s) no tienen prompt de animación: se usará un movimiento suave genérico.` : ""}\nGasta créditos de vídeo.`)) return;
+  const dv = $("vidDur").value, durTxt = dv === "auto" ? "según su frase" : `de ${dv} s`;
+  if (!confirm(`¿Generar ${txt} en Flow (${durTxt})?${sinAnim ? `\n${sinAnim} plano(s) no tienen prompt de animación: se usará un movimiento suave genérico.` : ""}\nGasta créditos de vídeo.`)) return;
   await guardarYa();
-  try { await api("/api/videos", {name: P.name, planos, cuentas, solo_faltan: soloFaltan}); toast(`Generando ${txt}…`); seleccion.clear(); galeriaFirma = ""; poll(); }
+  try { await api("/api/videos", {name: P.name, planos, cuentas, solo_faltan: soloFaltan, duracion: dv}); toast(`Generando ${txt}…`); seleccion.clear(); galeriaFirma = ""; poll(); }
   catch (err) { toast(err.message, 6000); }
 }
 $("vidFaltan").onclick = () => videos(null, true);
