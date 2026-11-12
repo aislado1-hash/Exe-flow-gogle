@@ -18,13 +18,13 @@ from .browser import get_page
 SEL_CARD = 'flow-grid-tile-container, flow-tile-container, [aria-roledescription="draggable"]'
 _ERR_RE = r"No se pudo generar|Se produjo un error|infringir|Something went wrong|could not generate"
 
-_JS_IDOF = "const idOf = (c) => c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : '');"
+_JS_IDOF = "const idOf = (c) => { const t = c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : ''); if (t) return t; const im = c.querySelector('img'); return im && im.getAttribute('src') ? 'src:' + im.getAttribute('src').split('=')[0] : ''; };"
 
 _JS_IDS = f"""() => {{ {_JS_IDOF} return [...document.querySelectorAll('{SEL_CARD}')].map(idOf).filter(Boolean); }}"""
 
 _JS_MARK_NEW = f"""([before, name]) => {{
     const cards = [...document.querySelectorAll('{SEL_CARD}')];
-    const idOf = (c) => c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : '');
+    {_JS_IDOF}
     for (const c of cards) {{
         if (c.dataset.gfk) continue;
         const id = idOf(c);
@@ -38,7 +38,7 @@ _JS_MARK_NEW = f"""([before, name]) => {{
 
 _JS_STATE = rf"""([name, tileId]) => {{
     const cards = [...document.querySelectorAll('{SEL_CARD}')];
-    const idOf = (c) => c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : '');
+    {_JS_IDOF}
     let card = cards.find(c => c.dataset.gfk === name) || (tileId ? cards.find(c => idOf(c) === tileId) : null);
     if (!card) return {{ estado: 'perdida' }};
     if (!card.dataset.gfk) card.dataset.gfk = name;      // re-marcar si Flow re-creó el nodo
@@ -72,7 +72,7 @@ _JS_ADOPTAR = f"""([antes, perdidas]) => {{
 # tarjeta es de cada plano: no depende de marcas que Flow borra al rehacer nodos.
 _JS_NUEVAS = rf"""(antes) => {{
     const cards = [...document.querySelectorAll('{SEL_CARD}')];
-    const idOf = (c) => c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : '');
+    {_JS_IDOF}
     const out = [];
     cards.forEach((card, idx) => {{
         const id = idOf(card);
@@ -256,7 +256,7 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                 continue
             try:
                 card = None
-                if por_posicion and it.get("tile"):
+                if por_posicion and it.get("tile") and not it["tile"].startswith("src:"):
                     card = page.locator(f'{SEL_CARD.split(",")[0]}:has([data-tile-id="{it["tile"]}"]), [data-tile-id="{it["tile"]}"]').first
                     if await card.count() == 0:
                         card = None
@@ -264,7 +264,7 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                     card = page.locator(SEL_CARD).nth(it["pos"])
                 if card is None:
                     card = page.locator(f'[data-gfk="{it["name"]}"]').first
-                if await card.count() == 0 and it.get("tile"):
+                if await card.count() == 0 and it.get("tile") and not it["tile"].startswith("src:"):
                     card = page.locator(f'{SEL_CARD.split(",")[0]}:has([data-tile-id="{it["tile"]}"]), [data-tile-id="{it["tile"]}"]').first
                 if await card.count() == 0:
                     # Último recurso: posición (las nuevas arriba, orden inverso de envío)
