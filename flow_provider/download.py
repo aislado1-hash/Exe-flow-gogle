@@ -142,12 +142,13 @@ def _save_to_dest(src_path: Path | str, dest_path: Path | str) -> None:
     shutil.copy2(str(src), str(dest))
 
 
-async def download_latest(output_path: str, resolution: str = "1K", is_video: bool = False) -> str:
-    """Descarga el último resultado. Retorna el path guardado. Debe llamarse con lock."""
+async def download_latest(output_path: str, resolution: str = "1K", is_video: bool = False, card=None) -> str:
+    """Descarga el último resultado (o la `card` indicada). Retorna el path guardado."""
     page = await get_page()
 
     print(f"  [download 1/5] Localizando card de {'video' if is_video else 'imagen'}...")
-    card = page.locator(_sel_card(is_video)).first
+    if card is None:
+        card = page.locator(_sel_card(is_video)).first
     await card.wait_for(state="visible", timeout=30_000)
 
     # ────────────────────────────────────────────────────────────────────────

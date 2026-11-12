@@ -264,6 +264,38 @@ async def _save_debug(project_dir: Path, debug_name: str) -> None:
         print(f"  No se pudo guardar el diagnóstico: {debug_error}")
 
 
+async def _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ratio, d_img_model, max_par):
+    """Envía hasta `max_par` imágenes seguidas, espera a que terminen y las descarga en orden."""
+    from flow_provider.paralelo import generar_en_paralelo
+    ratio = jobs[0].get("ratio", d_ratio)
+    model = jobs[0].get("model", d_img_model)
+    items = []
+    for i, job in enumerate(jobs, 1):
+        name = job.get("name") or f"image_{i:02d}"
+        items.append({"name": name, "prompt": job.get("prompt", ""),
+                      "refs": [references[r] if r in references else r
+                               for r in (job.get("refs") or defaults.get("refs") or [])],
+                      "out": _out_path(project_dir, name, "png")})
+    print(f"Modo paralelo: hasta {max_par} imágenes a la vez en este navegador.")
+
+    async def select_mode():
+        await flow.select_image_mode(aspect_ratio=ratio, count=1, model=model)
+
+    async def download(out, card):
+        return await flow.download_latest(out, resolution="1K", is_video=False, card=card)
+
+    res = await generar_en_paralelo(
+        items, select_mode, flow.add_reference_to_prompt, flow.upload_reference,
+        flow.submit_prompt, download, max_par=max_par)
+    results = []
+    for it in items:
+        r = res.get(it["name"], "ERROR: no se envió")
+        ok = not str(r).startswith("ERROR")
+        results.append({"name": it["name"], "type": "image", "ok": ok,
+                        **({"file": r} if ok else {"error": r[7:]})})
+    return results
+
+
 async def cmd_batch(args) -> int:
     if not session_exists():
         print("SIN SESION. Corre primero: python flow.py login")
@@ -302,6 +334,12 @@ async def cmd_batch(args) -> int:
     await flow.startup()
     try:
         await flow.create_project()
+        solo_imagenes = jobs and all(j.get("type", "image") == "image" and int(j.get("count", 1)) == 1
+                                     and not j.get("image") for j in jobs)
+        max_par = int(defaults.get("simultaneas", 8))
+        if solo_imagenes and max_par > 1:
+            results = await _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ratio, d_img_model, max_par)
+            jobs = []          # ya hechos: el bucle normal no hace nada
         for i, job in enumerate(jobs, 1):
             jtype = job.get("type", "image")
             name = job.get("name") or f"{jtype}_{i:02d}"
