@@ -238,7 +238,7 @@ async def select_video_mode(
     await _select_radio(panel, aspect_ratio)
     await _select_radio(panel, f"x{count}")
     if duration:
-        seconds = re.fullmatch(r"(\d+)\s*s", duration.strip())
+        seconds = re.fullmatch(r"(\d+)\s*s?", str(duration).strip())
         if not seconds:
             raise ValueError(f"Duración inválida: {duration}")
         await _set_duration(page, panel, int(seconds.group(1)))

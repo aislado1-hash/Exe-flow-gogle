@@ -55,6 +55,18 @@ _JS_STATE = rf"""([name, tileId]) => {{
     return {{ estado: 'generando' }};
 }}"""
 
+# Flow a veces sustituye el nodo de la tarjeta al terminar y se pierde la marca.
+# Las tarjetas nuevas sin marca se reparten entre las perdidas: Flow pone la más
+# reciente arriba, así que van en orden inverso de envío.
+_JS_ADOPTAR = f"""([antes, perdidas]) => {{
+    {_JS_IDOF}
+    const nuevas = [...document.querySelectorAll('{SEL_CARD}')]
+        .filter(c => !c.dataset.gfk && !c.dataset.gfkVisto && !antes.includes(idOf(c)));
+    const out = [];
+    perdidas.forEach((n, i) => {{ if (nuevas[i]) {{ nuevas[i].dataset.gfk = n; out.push([n, idOf(nuevas[i])]); }} }});
+    return out;
+}}"""
+
 _JS_MARCAR_VISTAS = f"""() => {{ for (const c of document.querySelectorAll('{SEL_CARD}')) c.dataset.gfkVisto = '1'; }}"""
 
 
@@ -112,6 +124,7 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
         tanda = items[c0:c0 + max_par]
         log(f"\n=== Tanda {c0 // max_par + 1}: enviando {len(tanda)} imágenes seguidas ===")
         await page.evaluate(_JS_MARCAR_VISTAS)
+        ids_tanda = await page.evaluate(_JS_IDS)
         enviadas = []
         for k, it in enumerate(tanda, c0 + 1):
             log(f"\n--- [{k}/{total}] image :: {it['name']} ---")
@@ -136,6 +149,7 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
         estado = {it["name"]: "generando" for it in enviadas}
         t0, ultimo = time.monotonic(), 0
         while any(v == "generando" for v in estado.values()) and time.monotonic() - t0 < timeout_s:
+            perdidas = []
             for it in enviadas:
                 if estado[it["name"]] != "generando":
                     continue
@@ -143,6 +157,15 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                 if r["estado"] in ("lista", "error"):
                     estado[it["name"]] = r["estado"]
                     it["detalle"] = r.get("detalle", "")
+                elif r["estado"] == "perdida":
+                    perdidas.append(it)
+            if perdidas:
+                adop = await page.evaluate(_JS_ADOPTAR, [ids_tanda, [it["name"] for it in reversed(perdidas)]])
+                for n, tid in adop:
+                    for it in perdidas:
+                        if it["name"] == n:
+                            it["tile"] = tid or it.get("tile")
+                            log(f"    [paralelo] Vuelvo a localizar la tarjeta de {n}.")
             seg = int(time.monotonic() - t0)
             if seg - ultimo >= 5:
                 ultimo = seg
