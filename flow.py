@@ -342,6 +342,44 @@ async def _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ra
     return results
 
 
+async def _batch_videos_paralelo(jobs, defaults, references, project_dir, d_ratio, d_vid_model,
+                                 d_vid_resolution, d_vid_duration, max_par):
+    """Sube todas las fotos, anima y envía hasta `max_par` vídeos seguidos y los descarga en orden."""
+    from flow_provider.paralelo_video import generar_videos_en_paralelo
+    ratio = jobs[0].get("ratio", d_ratio)
+    model = jobs[0].get("model", d_vid_model)
+    resolution = jobs[0].get("resolution", d_vid_resolution)
+    items = []
+    for i, job in enumerate(jobs, 1):
+        name = job.get("name") or f"video_{i:02d}"
+        items.append({"name": name, "prompt": job.get("prompt", ""),
+                      "start": references.get(job["start_ref"], job["start_ref"]),
+                      "duration": job.get("duration", d_vid_duration),
+                      "out": _out_path(project_dir, name, "mp4")})
+    print(f"Modo paralelo: hasta {max_par} vídeos a la vez en este navegador.")
+
+    async def configure_video(duration):
+        await flow.select_video_mode(mode="fotogramas", model=model, aspect_ratio=ratio, count=1,
+                                     duration=duration, resolution=resolution)
+
+    async def animate(path, conf):
+        await flow.animate_reference(path, conf)
+
+    async def download(out, card):
+        return await flow.download_latest(out, resolution="720p", is_video=True, card=card)
+
+    res = await generar_videos_en_paralelo(
+        items, flow.upload_reference, animate, configure_video, flow.submit_prompt, download,
+        flow.close_overlays, max_par=max_par, reintentos=int(defaults.get("video_retries", 2)))
+    results = []
+    for it in items:
+        r = res.get(it["name"], "ERROR: no se envió")
+        ok = not str(r).startswith("ERROR")
+        results.append({"name": it["name"], "type": "video", "ok": ok,
+                        **({"file": r} if ok else {"error": r[7:]})})
+    return results
+
+
 async def cmd_batch(args) -> int:
     if not session_exists():
         print("SIN SESION. Corre primero: python flow.py login")
@@ -386,6 +424,13 @@ async def cmd_batch(args) -> int:
         if solo_imagenes and max_par > 1:
             results = await _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ratio, d_img_model, max_par)
             jobs = []          # ya hechos: el bucle normal no hace nada
+        solo_videos = jobs and all(j.get("type") == "video" and j.get("start_ref") and int(j.get("count", 1)) == 1
+                                   for j in jobs)
+        max_vid = int(defaults.get("videos_simultaneos", 4))
+        if solo_videos and max_vid > 1:
+            results = await _batch_videos_paralelo(jobs, defaults, references, project_dir, d_ratio,
+                                                   d_vid_model, d_vid_resolution, d_vid_duration, max_vid)
+            jobs = []
         for i, job in enumerate(jobs, 1):
             jtype = job.get("type", "image")
             name = job.get("name") or f"{jtype}_{i:02d}"
