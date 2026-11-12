@@ -67,7 +67,43 @@ _JS_ADOPTAR = f"""([antes, perdidas]) => {{
     return out;
 }}"""
 
+# Estado de TODAS las tarjetas nuevas de la tanda, en el orden del lienzo
+# (Flow pone arriba la última enviada). Es la forma más fiable de saber qué
+# tarjeta es de cada plano: no depende de marcas que Flow borra al rehacer nodos.
+_JS_NUEVAS = rf"""(antes) => {{
+    const cards = [...document.querySelectorAll('{SEL_CARD}')];
+    const idOf = (c) => c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : '');
+    const out = [];
+    cards.forEach((card, idx) => {{
+        const id = idOf(card);
+        if (card.dataset.gfkVisto || (id && antes.includes(id))) return;
+        const txt = card.innerText || '';
+        let estado = 'generando', detalle = '';
+        if (/{_ERR_RE}/i.test(txt)) {{ estado = 'error'; detalle = txt.slice(0, 160); }}
+        else if (!/\b\d+%/.test(txt)) {{
+            let girando = false;
+            for (const sp of card.querySelectorAll('mat-progress-spinner, mat-spinner, flow-loading-indicator, [role="progressbar"]')) {{
+                const st = getComputedStyle(sp);
+                if (st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && (sp.offsetWidth || sp.offsetHeight)) girando = true;
+            }}
+            const img = card.querySelector('flow-image-tile img, img.image, img');
+            if (!girando && img && img.complete && img.naturalWidth > 0) estado = 'lista';
+        }}
+        out.push({{ id, idx, estado, detalle }});
+    }});
+    return out;
+}}"""
+
 _JS_MARCAR_VISTAS = f"""() => {{ for (const c of document.querySelectorAll('{SEL_CARD}')) c.dataset.gfkVisto = '1'; }}"""
+
+
+def _huella(path) -> str | None:
+    try:
+        import hashlib
+        with open(path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except Exception:
+        return None
 
 
 async def _limpiar_refs_del_prompt(page) -> None:
@@ -148,7 +184,27 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
         log(f"    [paralelo] Esperando a que Flow termine {len(enviadas)} imágenes...")
         estado = {it["name"]: "generando" for it in enviadas}
         t0, ultimo = time.monotonic(), 0
+        por_posicion = False
         while any(v == "generando" for v in estado.values()) and time.monotonic() - t0 < timeout_s:
+            nuevas = await page.evaluate(_JS_NUEVAS, ids_tanda)
+            if len(nuevas) == len(enviadas):
+                # Una tarjeta nueva por envío: la de arriba es la última enviada.
+                por_posicion = True
+                for it, nc in zip(reversed(enviadas), nuevas):
+                    it["pos"] = nc["idx"]
+                    if nc["id"]:
+                        it["tile"] = nc["id"]
+                    if estado[it["name"]] == "generando" and nc["estado"] in ("lista", "error"):
+                        estado[it["name"]] = nc["estado"]
+                        it["detalle"] = nc["detalle"]
+                seg = int(time.monotonic() - t0)
+                if seg - ultimo >= 5:
+                    ultimo = seg
+                    listas = sum(1 for v in estado.values() if v == "lista")
+                    log(f"    [paralelo] {listas}/{len(enviadas)} listas ({seg}s)...")
+                await asyncio.sleep(1.5)
+                continue
+            por_posicion = False
             perdidas = []
             for it in enviadas:
                 if estado[it["name"]] != "generando":
@@ -160,7 +216,8 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                 elif r["estado"] == "perdida":
                     perdidas.append(it)
             if perdidas:
-                adop = await page.evaluate(_JS_ADOPTAR, [ids_tanda, [it["name"] for it in reversed(perdidas)]])
+                conocidos = [it.get("tile") for it in enviadas if it.get("tile") and it not in perdidas]
+                adop = await page.evaluate(_JS_ADOPTAR, [ids_tanda + conocidos, [it["name"] for it in reversed(perdidas)]])
                 for n, tid in adop:
                     for it in perdidas:
                         if it["name"] == n:
@@ -174,6 +231,19 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
             await asyncio.sleep(1.5)
         await asyncio.sleep(2.5)   # dejar que terminen las animaciones de revelado
 
+        # Antes de descargar, recolocar por posición (lo más fiable si cuadra)
+        nuevas = await page.evaluate(_JS_NUEVAS, ids_tanda)
+        if len(nuevas) == len(enviadas):
+            por_posicion = True
+            for it, nc in zip(reversed(enviadas), nuevas):
+                it["pos"], it["tile"] = nc["idx"], nc["id"] or it.get("tile")
+                if nc["estado"] == "lista":
+                    estado[it["name"]] = "lista"
+        else:
+            por_posicion = False
+            log(f"    [paralelo] Aviso: hay {len(nuevas)} tarjetas nuevas para {len(enviadas)} envíos; "
+                f"las localizo por su marca.")
+        huellas: dict[str, str] = {}
         # Descargar en orden
         for idx, it in enumerate(enviadas):
             k = c0 + tanda.index(it) + 1
@@ -185,7 +255,15 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                 log(f"  ERROR en '{it['name']}': {motivo}")
                 continue
             try:
-                card = page.locator(f'[data-gfk="{it["name"]}"]').first
+                card = None
+                if por_posicion and it.get("tile"):
+                    card = page.locator(f'{SEL_CARD.split(",")[0]}:has([data-tile-id="{it["tile"]}"]), [data-tile-id="{it["tile"]}"]').first
+                    if await card.count() == 0:
+                        card = None
+                if card is None and por_posicion and it.get("pos") is not None:
+                    card = page.locator(SEL_CARD).nth(it["pos"])
+                if card is None:
+                    card = page.locator(f'[data-gfk="{it["name"]}"]').first
                 if await card.count() == 0 and it.get("tile"):
                     card = page.locator(f'{SEL_CARD.split(",")[0]}:has([data-tile-id="{it["tile"]}"]), [data-tile-id="{it["tile"]}"]').first
                 if await card.count() == 0:
@@ -194,6 +272,17 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                     card = page.locator(SEL_CARD).nth(pos)
                     log(f"    [paralelo] Aviso: localizo {it['name']} por posición ({pos}).")
                 saved = await download(it["out"], card)
+                h = _huella(saved)
+                if h and h in huellas:
+                    # Nunca guardar en silencio la imagen de otro plano.
+                    try:
+                        import os
+                        os.remove(saved)
+                    except Exception:
+                        pass
+                    raise RuntimeError(f"salió la misma imagen que {huellas[h]} (tarjeta confundida); se reintenta")
+                if h:
+                    huellas[h] = it["name"]
                 out[it["name"]] = saved
                 log(f"  OK -> {saved}")
             except Exception as e:

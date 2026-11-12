@@ -636,15 +636,63 @@ async def upload_reference(image_path: str) -> None:
     print(f"  [ref] {name} subida al proyecto.")
 
 
+async def _add_ref_from_panel(page, name: str) -> None:
+    """«+» del prompt → panel de recursos → buscar el archivo subido → elegirlo."""
+    stem = Path(name).stem
+    await page.wait_for_selector(SEL_ADD_INGREDIENT, state="visible", timeout=10_000)
+    await page.locator(SEL_ADD_INGREDIENT).first.click()
+    panel = page.locator(SEL_PANEL_RECURSOS).first
+    await panel.wait_for(state="visible", timeout=8_000)
+    await _switch_panel_tab(page, _ALL_TAB_RE)
+    search = panel.locator('input#add-menu-input, input[placeholder*="Buscar"], input[placeholder*="Search"]').first
+    patron = re.compile(re.escape(stem), re.IGNORECASE)
+    fila = None
+    for texto in (name, stem):
+        if await search.count() > 0:
+            await search.fill(texto)
+            await page.wait_for_timeout(1_500)
+        cand = panel.locator('[role="option"]').filter(has_text=patron)
+        if await cand.count() == 0:
+            cand = panel.locator(f'[role="option"]:has(img[alt*="{stem}" i])')
+        if await cand.count() > 0:
+            fila = cand.first
+            break
+    if fila is None:
+        try:
+            Path("scratch").mkdir(exist_ok=True)
+            Path(f"scratch/panel_ref_{stem}.html").write_text(await panel.inner_html(), encoding="utf-8")
+            await page.screenshot(path=f"scratch/panel_ref_{stem}.png")
+        except Exception:
+            pass
+        await page.keyboard.press("Escape")
+        raise RuntimeError(f"{name} no aparece en los archivos subidos del panel «+».")
+    await fila.click()
+    await page.wait_for_timeout(1_200)
+    try:
+        await panel.wait_for(state="hidden", timeout=4_000)
+    except Exception:
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(400)
+
+
 async def add_reference_to_prompt(image_path: str) -> None:
-    """Busca la tarjeta de la referencia por su nombre y pulsa
-    ⋮ → «Añadir a la petición». Llamar DESPUÉS de configurar el modelo."""
+    """Añade una referencia ya subida al prompt. Primero desde el panel «+» de
+    archivos subidos; si no se puede, desde su tarjeta: ⋮ → «Añadir a la petición».
+    Llamar DESPUÉS de configurar el modelo."""
     from .download import _open_card_menu
     page = await get_page()
     name = Path(image_path).name
-    tile = _tile_by_name(page, name)
-    await tile.wait_for(state="visible", timeout=15_000)
     try:
+        await _add_ref_from_panel(page, name)
+        print(f"  [ref] {name} añadida a la petición (desde archivos subidos).")
+        return
+    except Exception as e:
+        print(f"  [ref] Panel de archivos subidos: {e} Pruebo desde su tarjeta…")
+        await close_overlays()
+    tile = _tile_by_name(page, name)
+    try:
+        await tile.scroll_into_view_if_needed(timeout=10_000)
+        await tile.wait_for(state="visible", timeout=15_000)
         await _open_card_menu(page, tile, is_video=False, caller="ref")
         item = page.get_by_role("menuitem", name=_ADD_TO_PROMPT_RE).first
         await item.wait_for(state="visible", timeout=5_000)
@@ -653,4 +701,4 @@ async def add_reference_to_prompt(image_path: str) -> None:
         print(f"  [ref] {name} añadida a la petición.")
     except Exception:
         await close_overlays()
-        raise RuntimeError(f"No pude añadir {name} a la petición desde su menú ⋮.")
+        raise RuntimeError(f"No pude añadir {name} a la petición (ni desde archivos subidos ni desde su menú ⋮).")
