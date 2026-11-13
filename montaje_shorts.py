@@ -13,6 +13,9 @@ Qué hace:
   4. Une todo con corte seco o fundido corto, añade la música (opcional)
      -> outputs\\<proyecto>\\montaje.mp4 (1080x1920)
   5. Deja shorts_titulos.txt con títulos, descripción y hashtags del guion.
+
+Con --asmr (o "shorts": {"asmr": true} en el guion): sin texto ni música; cada
+clip conserva su sonido y el conjunto se normaliza a -16 LUFS.
 """
 import argparse
 import json
@@ -78,6 +81,57 @@ def escribir_titulos(folder: Path, meta: dict) -> None:
     (folder / "shorts_titulos.txt").write_text("\n".join(partes), encoding="utf-8")
 
 
+def parte_asmr(p: dict, out: Path, D: float) -> str:
+    """Clip con su propio sonido (ASMR): recorta a D, 9:16 y fundidos de audio cortos
+    para que no haya chasquidos entre cortes. Si no hay vídeo, imagen con movimiento
+    y silencio."""
+    vf = (f"fps={M.FPS},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
+          f"crop={W}:{H},setsar=1,tpad=stop_mode=clone:stop_duration={D:.3f}")
+    af = (f"aformat=sample_rates=48000:channel_layouts=stereo,apad,"
+          f"afade=t=in:d=0.12,afade=t=out:st={max(D - 0.15, 0):.3f}:d=0.15")
+    enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "192k", "-t", f"{D:.3f}"]
+    if p.get("video_path"):
+        clip = p["video_path"]
+        tiene_audio = "Audio:" in M.subprocess.run([M.FFMPEG, "-hide_banner", "-i", str(clip)],
+                                                   capture_output=True, text=True, errors="replace").stderr
+        if tiene_audio:
+            M.run(["-i", str(clip), "-vf", vf, "-af", af, *enc, str(out)])
+            return f"vídeo con sonido ({M.duration(clip):.1f}s)"
+        M.run(["-i", str(clip), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+               "-map", "0:v", "-map", "1:a", "-vf", vf, *enc, str(out)])
+        return "vídeo sin sonido"
+    silent = out.with_name(out.stem + "_v.mp4")
+    nota = M.render_piece(p, silent, W, H, D)
+    M.run(["-i", str(silent), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+           "-map", "0:v", "-map", "1:a", *enc, str(out)])
+    return nota + " (imagen, sin sonido)"
+
+
+def main_asmr(folder: Path, jobs: list[dict], out_file: Path, tmp: Path) -> float:
+    parts, t = [], 0.0
+    for i, j in enumerate(jobs, 1):
+        try:
+            D = max(float(j.get("dur") or DUR_DEF), 1.0)
+        except (TypeError, ValueError):
+            D = DUR_DEF
+        p = {"name": j["name"], "efecto": j.get("efecto") or M.EFECTOS[(i - 1) % len(M.EFECTOS)],
+             "image_path": M.find_media(folder, j["name"], (".png", ".jpg", ".jpeg", ".webp")),
+             "video_path": M.find_media(folder, j["name"], (".mp4",)) if j.get("usar", "video") == "video" else None}
+        part = tmp / f"{i:03d}.mp4"
+        nota = parte_asmr(p, part, D)
+        parts.append(part)
+        print(f"   {M.ts(t)} – {M.ts(t + D)}  {j['name']:<10} {D:4.1f}s  {nota}")
+        t += D
+    ins = sum((["-i", str(x)] for x in parts), [])
+    graph = "".join(f"[{k}:v][{k}:a]" for k in range(len(parts))) + \
+        f"concat=n={len(parts)}:v=1:a=1[v][a0];[a0]loudnorm=I=-16:TP=-1.5:LRA=11[a]"
+    M.run([*ins, "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", str(out_file)])
+    return t
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Monta un Short vertical con los planos del guion.")
     ap.add_argument("carpeta")
@@ -85,6 +139,8 @@ def main() -> int:
     ap.add_argument("--musica")
     ap.add_argument("--musica-db", type=float, default=-12.0)
     ap.add_argument("--salida")
+    ap.add_argument("--asmr", action="store_true",
+                    help="Estilo ASMR: sin texto ni música, con el sonido de cada clip (normalizado).")
     args = ap.parse_args()
 
     M.FFMPEG = M.ffmpeg_exe()
@@ -101,6 +157,14 @@ def main() -> int:
     tmp = folder / "_montaje_tmp"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir()
+    if args.asmr or (guion.get("shorts") or {}).get("asmr"):
+        try:
+            total = main_asmr(folder, jobs, out_file, tmp)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        escribir_titulos(folder, guion.get("shorts") or {})
+        print(f"\nOK (ASMR) -> {out_file}  ({total:.1f} s)")
+        return 0
     try:
         parts, durs, t = [], [], 0.0
         for i, j in enumerate(jobs, 1):
