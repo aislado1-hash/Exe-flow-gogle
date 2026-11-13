@@ -20,10 +20,11 @@ _ERR_RE = r"No se pudo generar|Se produjo un error|infringir|Something went wron
 
 _JS_IDOF = "const idOf = (c) => { const t = c.getAttribute('data-tile-id') || (c.querySelector('[data-tile-id]') ? c.querySelector('[data-tile-id]').getAttribute('data-tile-id') : ''); if (t) return t; const im = c.querySelector('img'); return im && im.getAttribute('src') ? 'src:' + im.getAttribute('src').split('=')[0] : ''; };"
 
-_JS_IDS = f"""() => {{ {_JS_IDOF} return [...document.querySelectorAll('{SEL_CARD}')].map(idOf).filter(Boolean); }}"""
+_JS_CARDS = f"""[...document.querySelectorAll('{SEL_CARD}')].filter(c => !(c.parentElement && c.parentElement.closest('{SEL_CARD}')))"""
+_JS_IDS = f"""() => {{ {_JS_IDOF} return {_JS_CARDS}.map(idOf).filter(Boolean); }}"""
 
 _JS_MARK_NEW = f"""([before, name]) => {{
-    const cards = [...document.querySelectorAll('{SEL_CARD}')];
+    const cards = {_JS_CARDS};
     {_JS_IDOF}
     for (const c of cards) {{
         if (c.dataset.gfk) continue;
@@ -37,7 +38,7 @@ _JS_MARK_NEW = f"""([before, name]) => {{
 }}"""
 
 _JS_STATE = rf"""([name, tileId]) => {{
-    const cards = [...document.querySelectorAll('{SEL_CARD}')];
+    const cards = {_JS_CARDS};
     {_JS_IDOF}
     let card = cards.find(c => c.dataset.gfk === name) || (tileId ? cards.find(c => idOf(c) === tileId) : null);
     if (!card) return {{ estado: 'perdida' }};
@@ -60,7 +61,7 @@ _JS_STATE = rf"""([name, tileId]) => {{
 # reciente arriba, así que van en orden inverso de envío.
 _JS_ADOPTAR = f"""([antes, perdidas]) => {{
     {_JS_IDOF}
-    const nuevas = [...document.querySelectorAll('{SEL_CARD}')]
+    const nuevas = {_JS_CARDS}
         .filter(c => !c.dataset.gfk && !c.dataset.gfkVisto && !antes.includes(idOf(c)));
     const out = [];
     perdidas.forEach((n, i) => {{ if (nuevas[i]) {{ nuevas[i].dataset.gfk = n; out.push([n, idOf(nuevas[i])]); }} }});
@@ -71,7 +72,7 @@ _JS_ADOPTAR = f"""([antes, perdidas]) => {{
 # (Flow pone arriba la última enviada). Es la forma más fiable de saber qué
 # tarjeta es de cada plano: no depende de marcas que Flow borra al rehacer nodos.
 _JS_NUEVAS = rf"""(antes) => {{
-    const cards = [...document.querySelectorAll('{SEL_CARD}')];
+    const cards = {_JS_CARDS};
     {_JS_IDOF}
     const out = [];
     cards.forEach((card, idx) => {{
@@ -93,6 +94,9 @@ _JS_NUEVAS = rf"""(antes) => {{
     }});
     return out;
 }}"""
+
+# Marca la tarjeta exterior nº idx para poder localizarla con Playwright
+_JS_MARCAR_DL = f"""([idx, name]) => {{ const cards = {_JS_CARDS}; for (const c of document.querySelectorAll('[data-gfk-dl="' + name + '"]')) delete c.dataset.gfkDl; if (!cards[idx]) return false; cards[idx].dataset.gfkDl = name; return true; }}"""
 
 _JS_MARCAR_VISTAS = f"""() => {{ for (const c of document.querySelectorAll('{SEL_CARD}')) c.dataset.gfkVisto = '1'; }}"""
 
@@ -261,7 +265,8 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                     if await card.count() == 0:
                         card = None
                 if card is None and por_posicion and it.get("pos") is not None:
-                    card = page.locator(SEL_CARD).nth(it["pos"])
+                    if await page.evaluate(_JS_MARCAR_DL, [it["pos"], it["name"]]):
+                        card = page.locator(f'[data-gfk-dl="{it["name"]}"]').first
                 if card is None:
                     card = page.locator(f'[data-gfk="{it["name"]}"]').first
                 if await card.count() == 0 and it.get("tile") and not it["tile"].startswith("src:"):
@@ -269,7 +274,8 @@ async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_re
                 if await card.count() == 0:
                     # Último recurso: posición (las nuevas arriba, orden inverso de envío)
                     pos = len(enviadas) - 1 - idx
-                    card = page.locator(SEL_CARD).nth(pos)
+                    await page.evaluate(_JS_MARCAR_DL, [pos, it["name"]])
+                    card = page.locator(f'[data-gfk-dl="{it["name"]}"]').first
                     log(f"    [paralelo] Aviso: localizo {it['name']} por posición ({pos}).")
                 saved = await download(it["out"], card)
                 h = _huella(saved)

@@ -28,8 +28,60 @@ def _huella(path) -> str | None:
         return None
 
 
+# Flow mete una tarjeta dentro de otra: contar solo las exteriores.
+_JS_CARDS = f"""[...document.querySelectorAll('{SEL_CARD}')].filter(c => !(c.parentElement && c.parentElement.closest('{SEL_CARD}')))"""
+
+
 async def _contar(page) -> int:
-    return await page.locator(SEL_CARD).count()
+    return await page.evaluate(f"() => {_JS_CARDS}.length")
+
+
+_ERR_RE = r"No se pudo generar|Se produjo un error|infringir|pol[ií]tica|Something went wrong|failed"
+
+
+async def _esperar_listos(page, n: int, timeout_s: int, log) -> list[str]:
+    """Espera a que las n primeras tarjetas (los vídeos de la tanda) terminen.
+    Devuelve el estado de cada una: 'lista', 'error' o 'generando' (si se agotó el tiempo)."""
+    js = f"""(n) => {{
+        const cards = {_JS_CARDS}.slice(0, n);
+        return cards.map(card => {{
+            const txt = card.innerText || '';
+            if (/{_ERR_RE}/i.test(txt)) return 'error';
+            if (/\\b\\d+%/.test(txt)) return 'generando';
+            for (const sp of card.querySelectorAll('mat-progress-spinner, mat-spinner, flow-loading-indicator, [role="progressbar"]')) {{
+                const st = getComputedStyle(sp);
+                if (st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0' && (sp.offsetWidth || sp.offsetHeight)) return 'generando';
+            }}
+            const v = card.querySelector('video');
+            const src = v ? (v.getAttribute('src') || v.currentSrc || '') : '';
+            if (v && src.length > 20) return 'lista';
+            const img = card.querySelector('img');
+            if (card.querySelector('flow-video-tile') && img && img.complete && img.naturalWidth > 0) return 'lista';
+            return 'generando';
+        }});
+    }}"""
+    t0, ultimo = time.monotonic(), -10
+    estados = ["generando"] * n
+    while time.monotonic() - t0 < timeout_s:
+        estados = await page.evaluate(js, n)
+        if len(estados) == n and all(e != "generando" for e in estados):
+            break
+        seg = int(time.monotonic() - t0)
+        if seg - ultimo >= 10:
+            ultimo = seg
+            log(f"    [paralelo] {sum(e == 'lista' for e in estados)}/{n} vídeos listos ({seg}s)...")
+        await asyncio.sleep(2)
+    return estados
+
+
+async def _card_en_pos(page, idx: int, name: str):
+    ok = await page.evaluate(
+        f"""([idx, name]) => {{ const cards = {_JS_CARDS};
+            for (const c of document.querySelectorAll('[data-gfk-dl="' + name + '"]')) delete c.dataset.gfkDl;
+            if (!cards[idx]) return false; cards[idx].dataset.gfkDl = name; return true; }}""", [idx, name])
+    if not ok:
+        raise RuntimeError(f"no encuentro la tarjeta nº {idx + 1} del lienzo")
+    return page.locator(f'[data-gfk-dl="{name}"]').first
 
 
 async def generar_videos_en_paralelo(items: list[dict], upload_ref, animate, configure_video, submit,
@@ -84,12 +136,16 @@ async def generar_videos_en_paralelo(items: list[dict], upload_ref, animate, con
         if enviadas:
             log(f"    [paralelo] Esperando y descargando {len(enviadas)} vídeos en orden...")
         n = len(enviadas)
+        estados = await _esperar_listos(page, n, 360, log) if n else []
         huellas: dict[str, str] = {}
         for j, it in enumerate(enviadas):
             k = items.index(it) + 1
             log(f"\n--- [{k}/{total}] video :: {it['name']} ---")
             try:
-                card = page.locator(SEL_CARD).nth(n - 1 - j)
+                est = estados[n - 1 - j] if len(estados) == n else "generando"
+                if est == "error":
+                    raise RuntimeError("Flow no pudo generar este vídeo")
+                card = await _card_en_pos(page, n - 1 - j, it["name"])
                 saved = await download(it["out"], card)
                 h = _huella(saved)
                 if h and h in huellas:
