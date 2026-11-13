@@ -142,7 +142,7 @@ async def _esperar_tarjeta_nueva(page, before: list[str], name: str, timeout: fl
 
 
 async def generar_en_paralelo(items: list[dict], select_mode, add_ref, upload_ref, submit, download,
-                              max_par: int = 8, timeout_s: int = 240, log=print,
+                              max_par: int = 10, timeout_s: int = 240, log=print,
                               reintentos: int = 1, subidas: set | None = None) -> dict[str, str]:
     """items: [{name, prompt, refs:[ruta], out}] en orden. Devuelve {name: ruta | 'ERROR: …'}.
 

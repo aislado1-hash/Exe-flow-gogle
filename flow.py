@@ -420,7 +420,7 @@ async def cmd_batch(args) -> int:
         await flow.create_project()
         solo_imagenes = jobs and all(j.get("type", "image") == "image" and int(j.get("count", 1)) == 1
                                      and not j.get("image") for j in jobs)
-        max_par = int(defaults.get("simultaneas", 8))
+        max_par = int(defaults.get("simultaneas", 10))
         if solo_imagenes and max_par > 1:
             results = await _batch_imagenes_paralelo(jobs, defaults, references, project_dir, d_ratio, d_img_model, max_par)
             jobs = []          # ya hechos: el bucle normal no hace nada
