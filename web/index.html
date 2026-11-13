@@ -448,6 +448,9 @@
         <aside class="sticky">
           <section class="card">
             <h2>Render</h2>
+            <label class="lbl" id="salidaLbl">Formato del vídeo</label>
+            <select id="salida"><option value="horizontal">Horizontal 16:9 (vídeo normal)</option><option value="short">Short 9:16 (vertical)</option></select>
+            <p class="faint" id="salidaAviso" hidden></p>
             <label class="lbl">Transición entre imágenes</label>
             <select id="transicion"><option value="fundido">Fundido corto (0,25 s)</option><option value="corte">Corte seco</option></select>
             <label id="srtLbl" style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="srt" style="accent-color:var(--accent)"> Crear subtítulos (.srt para CapCut)</label>
@@ -784,6 +787,7 @@ async function abrirProyecto(name) {
   $("vidModel").value = P.ajustes.video_model || "Omni 1.2 Flash";
   $("vidDur").value = String(P.ajustes.video_duracion || "auto");
   $("musDb").value = P.ajustes.musica_db; $("ducking").value = P.ajustes.ducking; $("transicion").value = P.ajustes.transicion;
+  $("salida").value = P.ajustes.salida || "horizontal";
   $("srt").checked = P.ajustes.srt !== false; $("subPrevia").checked = !!P.ajustes.subtitulos_previa; seleccion.clear();
   pintarMusDb();
   saveState("Guardado");
@@ -841,10 +845,12 @@ window.addEventListener("beforeunload", (e) => { if (savePending) { guardarYa();
 function leerAjustes() {
   return {image_model: $("imgModel").value.trim(), video_model: $("vidModel").value.trim() || "Omni 1.2 Flash", video_duracion: $("vidDur").value, ratio: $("ratio").value, musica_db: +$("musDb").value,
           ducking: $("ducking").value, transicion: $("transicion").value,
-          srt: $("srt").checked, subtitulos_previa: $("subPrevia").checked};
+          srt: $("srt").checked, subtitulos_previa: $("subPrevia").checked, salida: $("salida").value};
 }
-for (const id of ["imgModel", "vidModel", "vidDur", "ratio", "ducking", "transicion", "srt", "subPrevia"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
+for (const id of ["imgModel", "vidModel", "vidDur", "ratio", "ducking", "transicion", "srt", "subPrevia", "salida"]) $(id).addEventListener("change", () => { P.ajustes = leerAjustes(); guardar("ajustes"); });
 $("imgModel").addEventListener("input", () => guardar("ajustes"));
+$("salida").addEventListener("change", () => { if (P && P.estado) pintarRender(P.estado); });
+$("ratio").addEventListener("change", () => { if (P && P.estado) pintarRender(P.estado); });
 $("vidModel").addEventListener("input", () => guardar("ajustes"));
 $("musDb").addEventListener("input", () => { pintarMusDb(); P.ajustes = leerAjustes(); guardar("ajustes"); });
 function pintarMusDb() { $("musDbTxt").textContent = `${$("musDb").value} dB`; }
@@ -1291,6 +1297,15 @@ function pintarRender(s) {
   ];
   $("checklist").innerHTML = items.map(([ok, t]) => `<li style="color:${ok ? "var(--muted)" : "var(--accent)"}">${ok ? "✓" : "•"} ${esc(t)}</li>`).join("");
   $("render").disabled = (sh ? !hechas : !m.narracion) || r.running || !!r.otro || s.gen.running;
+  const corto = $("salida").value === "short";
+  $("salida").hidden = $("salidaLbl").hidden = sh;           // la pestaña Shorts ya es vertical
+  if (!sh) $("renderNota").textContent = corto
+    ? "1080x1920, 9:16 (Short). El vídeo sale sin subtítulos; si marcas la casilla se crea además el .srt aparte."
+    : "1080p, 16:9. El vídeo sale sin subtítulos; si marcas la casilla se crea además el .srt aparte.";
+  const choca = !sh && corto !== ($("ratio").value === "9:16");
+  $("salidaAviso").hidden = !choca;
+  $("salidaAviso").textContent = corto ? "Tus imágenes son horizontales: en el Short se recortan los lados. Para que encajen, pon el formato de imagen en 9:16 (paso 1) y regenera."
+    : "Tus imágenes son verticales: en 16:9 se recortan arriba y abajo.";
   $("render").textContent = r.running && r.mode === "render" ? "Renderizando…" : (m.video ? "Volver a renderizar" : "Render");
   $("renderStop").hidden = !r.running;
   const log = $("renderLog");

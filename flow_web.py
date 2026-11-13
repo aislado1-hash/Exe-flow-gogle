@@ -51,7 +51,8 @@ NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": "fundido",
                "srt": True, "subtitulos_previa": False, "tipo": "camioneras",
                "musica_db": -14, "ducking": "media",
-               "video_model": "Omni 1.2 Flash", "video_duracion": "auto"}
+               "video_model": "Omni 1.2 Flash", "video_duracion": "auto",
+               "salida": "horizontal"}          # formato del render: "horizontal" (16:9) o "short" (9:16)
 VIDEO_MIN, VIDEO_MAX = 4, 8                  # duración de los clips que se piden a Flow
 # Archivos que no se copian al duplicar un proyecto
 NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
@@ -409,6 +410,8 @@ class Render:
         if musica and mode == "render":
             cmd += ["--musica", str(musica), "--musica-db", str(float(aj["musica_db"])),
                     "--ducking", aj["ducking"] if aj["ducking"] in ("no", "suave", "media", "fuerte") else "media"]
+        if aj.get("salida") == "short":
+            cmd.append("--short")
         if mode == "tiempos":
             cmd.append("--solo-tiempos")
         if not aj.get("srt", True):

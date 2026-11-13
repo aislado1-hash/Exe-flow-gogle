@@ -366,6 +366,8 @@ def main() -> int:
     ap.add_argument("--ducking", choices=["no", "suave", "media", "fuerte"], default="media",
                     help="Cuánto baja la música cuando hablas (por defecto media).")
     ap.add_argument("--sin-srt", action="store_true", help="No crear el archivo de subtítulos .srt.")
+    ap.add_argument("--short", action="store_true",
+                    help="Salida vertical 9:16 para Shorts (1080x1920 o 720x1280) en vez de 16:9.")
     ap.add_argument("--solo-tiempos", action="store_true",
                     help="Solo calcula cuándo entra cada imagen (montaje_tiempos.json), sin renderizar.")
     args = ap.parse_args()
@@ -381,6 +383,8 @@ def main() -> int:
         print(f"No encuentro el audio: {audio}")
         return 1
     W, H = (1920, 1080) if args.res == 1080 else (1280, 720)
+    if args.short:
+        W, H = H, W                     # vertical: 1080x1920 / 720x1280
     out_file = Path(args.salida) if args.salida else folder / "montaje.mp4"
 
     guion = json.loads(guion_path.read_text(encoding="utf-8"))
@@ -389,7 +393,7 @@ def main() -> int:
         print("El guion no tiene planos.")
         return 1
 
-    print(f"MONTAJE: {len(pieces)} planos · audio {audio.name}")
+    print(f"MONTAJE: {len(pieces)} planos · audio {audio.name} · {W}x{H}" + (" (Short 9:16)" if args.short else ""))
     for k, p in enumerate(pieces):
         p["image_path"] = find_media(folder, p["image"], (".png", ".jpg", ".jpeg", ".webp"))
         p["video_path"] = find_media(folder, p["image"], (".mp4",)) if p["usar"] == "video" else None
