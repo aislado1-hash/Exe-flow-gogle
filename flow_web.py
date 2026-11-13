@@ -500,6 +500,11 @@ def project_state(project: str, with_guion: bool = False) -> dict:
                 item.update({k: v for k, v in JOB.planos[name].items() if v is not None})
                 if item["estado"] == "sin terminar" and img:
                     item["estado"] = "hecho"
+                elif item["estado"] == "pendiente" and img:
+                    # Ya tiene imagen, pero está en la cola de esta generación
+                    # («Regenerar todas» o «Rehacer»): se sustituirá cuando le toque.
+                    item["estado"] = "en cola"
+                    item["detalle"] = "ya tiene imagen; se volverá a generar"
             if img:
                 item["thumb"] = _url(img)
             vid = find_video(pdir, name)
