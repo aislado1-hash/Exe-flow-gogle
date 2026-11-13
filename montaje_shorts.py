@@ -95,10 +95,15 @@ def parte_asmr(p: dict, out: Path, D: float) -> str:
         clip = p["video_path"]
         tiene_audio = "Audio:" in M.subprocess.run([M.FFMPEG, "-hide_banner", "-i", str(clip)],
                                                    capture_output=True, text=True, errors="replace").stderr
+        largo = M.duration(clip)
+        desde = p.get("desde")
+        if desde is None:                     # tramo central: el arranque suele estar quieto
+            desde = max(min((largo - D) / 2, 1.5), 0) if largo > D + 0.5 else 0
+        ss = ["-ss", f"{float(desde):.3f}"]
         if tiene_audio:
-            M.run(["-i", str(clip), "-vf", vf, "-af", af, *enc, str(out)])
-            return f"vídeo con sonido ({M.duration(clip):.1f}s)"
-        M.run(["-i", str(clip), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            M.run([*ss, "-i", str(clip), "-vf", vf, "-af", af, *enc, str(out)])
+            return f"vídeo con sonido (desde {float(desde):.1f}s de {largo:.1f}s)"
+        M.run([*ss, "-i", str(clip), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
                "-map", "0:v", "-map", "1:a", "-vf", vf, *enc, str(out)])
         return "vídeo sin sonido"
     silent = out.with_name(out.stem + "_v.mp4")
@@ -115,7 +120,7 @@ def main_asmr(folder: Path, jobs: list[dict], out_file: Path, tmp: Path) -> floa
             D = max(float(j.get("dur") or DUR_DEF), 1.0)
         except (TypeError, ValueError):
             D = DUR_DEF
-        p = {"name": j["name"], "efecto": j.get("efecto") or M.EFECTOS[(i - 1) % len(M.EFECTOS)],
+        p = {"name": j["name"], "desde": j.get("desde"), "efecto": j.get("efecto") or M.EFECTOS[(i - 1) % len(M.EFECTOS)],
              "image_path": M.find_media(folder, j["name"], (".png", ".jpg", ".jpeg", ".webp")),
              "video_path": M.find_media(folder, j["name"], (".mp4",)) if j.get("usar", "video") == "video" else None}
         part = tmp / f"{i:03d}.mp4"

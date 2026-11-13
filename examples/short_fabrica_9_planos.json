@@ -1,0 +1,39 @@
+{
+  "project": "short_fabrica_9_planos",
+  "shorts": {
+    "asmr": true,
+    "titulo_es": "Así se fabrica en China 🏭🔴",
+    "titulo_en": "How it's made in a Chinese factory 🏭🔴",
+    "descripcion": "Dentro de la fábrica: de bolas de silicona roja a pieza terminada.",
+    "hashtags": "#howitsmade #factory #satisfying #asmr #shorts"
+  },
+  "jobs": [
+    {"type": "image", "name": "plano01", "refs": [], "dur": 1.4, "usar": "video",
+     "prompt": "Vista desde arriba, grabado con móvil: una bandeja de plástico llena de decenas de bolas grandes de silicona roja brillante, una mano con guante blanco de algodón las remueve. Mesa de una fábrica china, luz fluorescente. Foto realista de móvil, formato vertical.",
+     "anim": "La mano con guante blanco empuja y hace rodar las bolas rojas, que chocan entre sí y se deforman un poco. Cámara en mano ligeramente temblorosa."},
+    {"type": "image", "name": "plano02", "refs": [], "dur": 1.3, "usar": "video",
+     "prompt": "Un operario chino con camiseta gris y pantalón corto suelda con un soldador eléctrico un esqueleto metálico de muñeca de tamaño real colgado de un soporte, chispas brillantes, cajas azules y cables por el suelo de la fábrica. Foto realista grabada con móvil, formato vertical.",
+     "anim": "El soldador lanza chispas blancas mientras el operario recorre la junta del esqueleto metálico. Cámara en mano."},
+    {"type": "image", "name": "plano03", "refs": [], "dur": 1.3, "usar": "video",
+     "prompt": "Dos operarios con guantes blancos y sandalias abren en el suelo de terrazo de la fábrica un molde enorme de fibra negro y gris con forma alargada, otros moldes iguales apilados al lado. Grabado desde arriba con móvil, foto realista, formato vertical.",
+     "anim": "Los operarios levantan la tapa del molde, que se separa despacio con un crujido. Cámara en mano desde arriba."},
+    {"type": "image", "name": "plano04", "refs": [], "dur": 1.3, "usar": "video",
+     "prompt": "Primer plano grabado con móvil: una pistola dosificadora industrial inyecta silicona roja espesa por un agujero de un molde metálico cerrado sobre una mesa de la fábrica, la silicona roja rebosa un poco. Foto realista, formato vertical.",
+     "anim": "La silicona roja sale espesa y brillante de la boquilla y rebosa lentamente por el borde del agujero. Cámara en mano."},
+    {"type": "image", "name": "plano05", "refs": [], "dur": 1.5, "usar": "video",
+     "prompt": "Unas manos con guantes de nitrilo negros sacan tirando de un molde abierto una pierna de muñeca de silicona roja recién curada, la silicona se despega del molde. Fábrica china, luz fluorescente, grabado con móvil muy de cerca, foto realista, formato vertical.",
+     "anim": "Las manos tiran y la pierna roja se despega del molde estirándose de forma muy satisfactoria. Cámara en mano muy cerca."},
+    {"type": "image", "name": "plano06", "refs": [], "dur": 1.3, "usar": "video",
+     "prompt": "Primerísimo plano: unas tijeras curvas recortan la rebaba fina de silicona roja del borde de un brazo de muñeca rojo apoyado en una mesa blanca de la fábrica, manos con guantes negros. Grabado con móvil, foto realista, formato vertical.",
+     "anim": "Las tijeras cortan la rebaba fina, que cae en una tira. Cámara en mano muy cerca."},
+    {"type": "image", "name": "plano07", "refs": [], "dur": 1.3, "usar": "video",
+     "prompt": "Una lijadora eléctrica azul pule la planta de un pie de muñeca de silicona roja sujeto en una mesa de trabajo de la fábrica, polvo fino rojo, estanterías metálicas al fondo. Grabado con móvil, foto realista, formato vertical.",
+     "anim": "La lijadora gira y pule la superficie del pie dejando un polvo fino. Cámara en mano."},
+    {"type": "image", "name": "plano08", "refs": [], "dur": 1.4, "usar": "video",
+     "prompt": "Primerísimo plano: un pincel fino pinta de negro brillante las uñas de una mano de muñeca de silicona roja muy realista, apoyada sobre una tela blanca en la fábrica. Grabado con móvil, foto realista, formato vertical.",
+     "anim": "El pincel desliza la laca negra sobre la uña en un solo trazo lento. Cámara en mano muy cerca."},
+    {"type": "image", "name": "plano09", "refs": [], "dur": 1.8, "usar": "video",
+     "prompt": "Final: decenas de manos, brazos y piernas de silicona roja terminados, con uñas negras, colgados en fila de una barra metálica en la fábrica china, luz fluorescente, operarios desenfocados al fondo. Grabado con móvil, foto realista, formato vertical.",
+     "anim": "La cámara pasa despacio a lo largo de la fila de piezas rojas colgadas, que se balancean un poco. Cámara en mano."}
+  ]
+}
