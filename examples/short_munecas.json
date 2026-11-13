@@ -1,0 +1,51 @@
+{
+  "project": "short_prueba_4_planos",
+  "shorts": {
+    "titulo_es": "¿Cómo nace una muñeca tan realista? 🤔",
+    "titulo_en": "How is such a realistic doll made? 🤔",
+    "descripcion": "Del molde a la muñeca terminada en 16 segundos. ¿Te parece real?",
+    "hashtags": "#shorts #muñeca #satisfactorio #howitsmade #proceso"
+  },
+  "jobs": [
+    {
+      "type": "image",
+      "name": "plano01",
+      "refs": ["taller"],
+      "texto": "¿Cómo nace una muñeca así? 🤔",
+      "prompt": "Primer plano de silicona líquida color carne vertiéndose despacio desde un cubo metálico dentro de un molde grande y brillante, en el taller de la referencia. Hilo de silicona espeso y brillante, luz cálida lateral, fondo de taller desenfocado. Foto realista, vertical, cámara fija.",
+      "anim": "La silicona líquida cae despacio y llena el molde, pequeñas burbujas en la superficie. Cámara fija, sin cortes.",
+      "dur": 4,
+      "usar": "video"
+    },
+    {
+      "type": "image",
+      "name": "plano02",
+      "refs": ["muneca", "taller"],
+      "texto": "Paso 1: desmoldar",
+      "prompt": "Unas manos con guantes de nitrilo negros abren un molde y separan despacio la cara de silicona de la muñeca de la referencia (misma cara, rasgos estilo anime realista), todavía sin pintar y sin pelo. Mesa de trabajo del taller, luz cálida. Primer plano, foto realista, vertical, cámara fija.",
+      "anim": "Las manos despegan la silicona del molde poco a poco, la piel se estira y se suelta de forma satisfactoria. Cámara fija.",
+      "dur": 4,
+      "usar": "video"
+    },
+    {
+      "type": "image",
+      "name": "plano03",
+      "refs": ["muneca", "taller"],
+      "texto": "Paso 2: pintar cada detalle a mano 🖌️",
+      "prompt": "Primerísimo plano de un pincel muy fino pintando las pestañas y el rubor de la cara de la muñeca de la referencia (misma cara, ojos grandes estilo anime), sobre un soporte en la mesa del taller, botes de pintura al lado. Detalle de textura de piel muy realista. Foto realista, vertical, cámara fija.",
+      "anim": "El pincel traza las pestañas con pequeños movimientos precisos. Cámara fija, enfoque en el ojo.",
+      "dur": 4,
+      "usar": "video"
+    },
+    {
+      "type": "image",
+      "name": "plano04",
+      "refs": ["muneca", "taller"],
+      "texto": "¿Te parece real? 👀",
+      "prompt": "La muñeca de la referencia terminada (misma cara, pelo y ropa de la hoja), sentada en una silla del taller con un vestido casual cerrado, plano medio de frente mirando a cámara. Luz suave de estudio, fondo de taller desenfocado. Foto realista de producto, vertical, cámara fija.",
+      "anim": "La cámara se acerca muy despacio a la cara de la muñeca, el pelo se mueve ligeramente. Sin cambiar la pose.",
+      "dur": 4,
+      "usar": "video"
+    }
+  ]
+}

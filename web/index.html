@@ -73,6 +73,8 @@
   .empty { border: 1px dashed var(--line2); border-radius: var(--radius); padding: 34px 20px; text-align: center; color: var(--muted); }
 
   /* ---------- inicio ---------- */
+  body.vertical .foto .img, body.vertical .plano .mini-img { aspect-ratio: 9 / 16; }
+  body.vertical .plano .mini-img { max-height: 220px; }
   .tipos { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
   .tipo { padding: 12px 20px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); cursor: pointer;
           font-weight: 600; color: var(--muted); display: flex; gap: 10px; align-items: center; }
@@ -192,6 +194,7 @@
     <nav class="tipos" id="tipos">
       <div class="tipo" data-tipo="camioneras">Camioneras Narración <span class="cnt" id="cntCamioneras">0</span></div>
       <div class="tipo" data-tipo="stick">Videos Stick <span class="cnt" id="cntStick">0</span></div>
+      <div class="tipo" data-tipo="shorts">Shorts Muñecas <span class="cnt" id="cntShorts">0</span></div>
     </nav>
     <div class="home">
       <div>
@@ -233,7 +236,7 @@
             <input type="text" id="refNombre" placeholder="Nombre (p. ej. interior_noche)" style="flex:1">
             <button id="refAdd">Añadir</button>
           </div>
-          <p class="faint">Clic en una foto para cambiarla. En el guion se usan por su nombre.</p>
+          <p class="faint" id="refsNota">Clic en una foto para cambiarla. En el guion se usan por su nombre.</p>
           <input type="file" id="refFile" accept=".png,.jpg,.jpeg,.webp" hidden>
         </section>
         <section class="card">
@@ -305,6 +308,14 @@
             <div class="lbl">Personajes comunes (de la pestaña)</div>
             <div class="faint" id="pjsComunesMini">—</div>
 
+          </section>
+          <section class="card" id="cardShorts" hidden>
+            <h2>Publicación del Short</h2>
+            <label class="lbl">Título (español)</label><input type="text" id="shTitEs" data-sh="titulo_es">
+            <label class="lbl">Título (inglés)</label><input type="text" id="shTitEn" data-sh="titulo_en">
+            <label class="lbl">Descripción</label><textarea id="shDesc" data-sh="descripcion" rows="3"></textarea>
+            <label class="lbl">Hashtags</label><input type="text" id="shTags" data-sh="hashtags" placeholder="#shorts #muñeca …">
+            <p class="faint">Se guarda en el guion y el render deja <b>shorts_titulos.txt</b> listo para copiar en YouTube.</p>
           </section>
           <section class="card">
             <h2>Ajustes de imagen</h2>
@@ -389,7 +400,7 @@
           <audio id="mus" preload="auto" loop></audio>
         </section>
         <aside class="sticky">
-          <section class="card">
+          <section class="card" id="cardVoz">
             <h2>Voz en off</h2>
             <div class="row"><button id="subirVoz">Subir narración…</button><span class="muted" id="vozNombre">Sin narración</span></div>
             <input type="file" id="vozFile" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,audio/*" hidden>
@@ -428,6 +439,7 @@
             <div class="row" style="margin-top:12px">
               <a id="dlVideo" download><button>Descargar montaje.mp4</button></a>
               <a id="dlSrt" download><button>Descargar subtítulos .srt</button></a>
+              <a id="dlTit" download hidden><button>Descargar títulos .txt</button></a>
             </div>
           </div>
           <div class="empty" id="sinVideo">Aún no hay vídeo. Pulsa <b>Render</b>.</div>
@@ -438,13 +450,13 @@
             <h2>Render</h2>
             <label class="lbl">Transición entre imágenes</label>
             <select id="transicion"><option value="fundido">Fundido corto (0,25 s)</option><option value="corte">Corte seco</option></select>
-            <label style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="srt" style="accent-color:var(--accent)"> Crear subtítulos (.srt para CapCut)</label>
+            <label id="srtLbl" style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer"><input type="checkbox" id="srt" style="accent-color:var(--accent)"> Crear subtítulos (.srt para CapCut)</label>
             <ul class="faint" id="checklist" style="list-style:none;padding-left:0;margin:12px 0;line-height:1.7"></ul>
             <div class="row">
               <button class="primary" id="render">Render</button>
               <button class="danger" id="renderStop" hidden>Parar</button>
             </div>
-            <p class="faint">1080p, 16:9. El vídeo sale sin subtítulos; si marcas la casilla se crea además el .srt aparte.</p>
+            <p class="faint" id="renderNota">1080p, 16:9. El vídeo sale sin subtítulos; si marcas la casilla se crea además el .srt aparte.</p>
           </section>
         </aside>
       </div>
@@ -482,7 +494,8 @@ let tab = "guion";
 let pollTimer = null;
 
 /* ---------- Navegación (misma ventana, con #/p/nombre/paso) ---------- */
-const TIPOS = {camioneras: "Camioneras Narración", stick: "Videos Stick"};
+const TIPOS = {camioneras: "Camioneras Narración", stick: "Videos Stick", shorts: "Shorts Muñecas"};
+const esShort = () => (P ? P.tipo : tipoActual) === "shorts";
 let tipoActual = "camioneras";
 function ruta() {
   const m = location.hash.match(/^#\/p\/([^/]+)(?:\/(\w+))?/);
@@ -490,12 +503,12 @@ function ruta() {
 }
 async function enrutar() {
   const r = ruta();
-  if (!r) { tipoActual = location.hash.startsWith("#/stick") ? "stick" : "camioneras"; await cerrarProyecto(); mostrarHome(); return; }
+  if (!r) { tipoActual = location.hash.startsWith("#/stick") ? "stick" : location.hash.startsWith("#/shorts") ? "shorts" : "camioneras"; await cerrarProyecto(); mostrarHome(); return; }
   if (!P || P.name !== r.name) { await cerrarProyecto(); if (!(await abrirProyecto(r.name))) return; }
   irTab(r.tab, false);
 }
 window.addEventListener("hashchange", enrutar);
-const homeDe = (t) => t === "stick" ? "#/stick" : "#/";
+const homeDe = (t) => t === "stick" ? "#/stick" : t === "shorts" ? "#/shorts" : "#/";
 $("goHome").onclick = () => { location.hash = homeDe(P ? P.tipo : tipoActual); };
 $("volver").onclick = () => { location.hash = homeDe(P ? P.tipo : tipoActual); };
 $("tipos").addEventListener("click", (e) => { const t = e.target.closest("[data-tipo]"); if (t) location.hash = homeDe(t.dataset.tipo); });
@@ -509,7 +522,9 @@ async function mostrarHome() {
   document.title = `${TIPOS[tipoActual]} · GoogleFlowKillerVideos`;
   for (const t of document.querySelectorAll(".tipo")) t.classList.toggle("on", t.dataset.tipo === tipoActual);
   $("tituloProyectos").textContent = `Proyectos · ${TIPOS[tipoActual]}`;
-  $("cardRefs").hidden = tipoActual !== "camioneras"; $("cardEstilo").hidden = tipoActual !== "stick";
+  $("cardRefs").hidden = tipoActual === "stick"; $("cardEstilo").hidden = tipoActual !== "stick";
+  $("refsNota").textContent = tipoActual === "shorts" ? "Referencias de los Shorts (p. ej. «muneca» con la hoja de tu muñeca y «taller»). En el guion se usan por su nombre."
+    : "Clic en una foto para cambiarla. En el guion se usan por su nombre.";
   await Promise.all([cargarProyectos(), cargarRefs(), cargarCuentas(), cargarEstilo(), cargarComunes()]);
   clearTimeout(pollTimer); pollTimer = setTimeout(pollHome, 5000);
 }
@@ -520,6 +535,7 @@ async function cargarProyectos() {
   try { lista = (await api("/api/proyectos")).proyectos; } catch (e) { toast(e.message); }
   $("cntCamioneras").textContent = lista.filter(p => (p.tipo || "camioneras") === "camioneras").length;
   $("cntStick").textContent = lista.filter(p => p.tipo === "stick").length;
+  $("cntShorts").textContent = lista.filter(p => p.tipo === "shorts").length;
   lista = lista.filter(p => (p.tipo || "camioneras") === tipoActual);
   $("proyectos").innerHTML = lista.length ? lista.map(p => `
     <div class="pcard">
@@ -529,7 +545,7 @@ async function cargarProyectos() {
       </div>
       <div class="body">
         <div class="nm" data-abrir="${esc(p.name)}">${esc(p.name)}</div>
-        <div class="faint">${p.imagenes}/${p.planos} imágenes · ${p.narracion ? "con narración" : "sin narración"}</div>
+        <div class="faint">${p.imagenes}/${p.planos} imágenes${tipoActual === "shorts" ? " · 9:16" : ` · ${p.narracion ? "con narración" : "sin narración"}`}</div>
         <div class="faint">Modificado ${esc(p.modificado)}</div>
         <div class="acts">
           <button class="primary mini" data-abrir="${esc(p.name)}">Abrir</button>
@@ -680,8 +696,9 @@ $("pjFile").onchange = async () => {
 
 /* ---------- Referencias ---------- */
 let refDestino = null;
+const grupoRefs = () => esShort() ? "shorts" : "";
 async function cargarRefs() {
-  const {refs} = await api("/api/refs");
+  const {refs} = await api(`/api/refs?grupo=${grupoRefs()}`);
   refsActuales = refs.map(r => r.name); refsUrls = Object.fromEntries(refs.map(r => [r.name, r.url]));
   $("refs").innerHTML = refs.map(r => `<div class="ref" data-n="${esc(r.name)}" title="Clic para cambiar la foto">
       <img src="${esc(r.url)}" alt=""><div class="nm"><span>${esc(r.name)}</span><button class="x" data-del="${esc(r.name)}" title="Borrar referencia">🗑</button></div></div>`).join("")
@@ -692,7 +709,7 @@ $("refs").addEventListener("click", async (e) => {
   if (del) {
     e.stopPropagation();
     if (!confirm(`¿Borrar la referencia «${del.dataset.del}»? Se elimina su foto de la carpeta refs.`)) return;
-    await api("/api/ref/borrar", {ref: del.dataset.del}); toast(`Referencia «${del.dataset.del}» borrada.`); return cargarRefs();
+    await api("/api/ref/borrar", {ref: del.dataset.del, grupo: grupoRefs()}); toast(`Referencia «${del.dataset.del}» borrada.`); return cargarRefs();
   }
   const card = e.target.closest(".ref"); if (!card) return;
   if (card.dataset.nueva) { $("refNombre").focus(); return toast("Escribe el nombre de la referencia y pulsa Añadir."); }
@@ -705,7 +722,7 @@ $("refAdd").onclick = () => {
 };
 $("refFile").onchange = async () => {
   const f = $("refFile").files[0]; $("refFile").value = ""; if (!f || !refDestino) return;
-  try { await api("/api/ref", {ref: refDestino, filename: f.name, data: await leerArchivo(f)}); $("refNombre").value = ""; toast(`Referencia «${refDestino}» guardada.`); }
+  try { await api("/api/ref", {ref: refDestino, grupo: grupoRefs(), filename: f.name, data: await leerArchivo(f)}); $("refNombre").value = ""; toast(`Referencia «${refDestino}» guardada.`); }
   catch (e) { toast(e.message); }
   cargarRefs();
 };
@@ -751,11 +768,17 @@ async function abrirProyecto(name) {
   try { s = await api(`/api/proyecto?name=${encodeURIComponent(name)}&guion=1`); }
   catch (e) { toast(e.message, 6000); location.hash = homeDe(tipoActual); return false; }
   P = {name: s.project, ajustes: s.ajustes, estado: s, planos: planosDesdeJobs(s.guion.jobs || []),
-       tipo: s.ajustes.tipo || "camioneras", personajes: s.personajes || [], estilo: s.estilo || null};
+       tipo: s.ajustes.tipo || "camioneras", personajes: s.personajes || [], estilo: s.estilo || null,
+       shorts: s.guion.shorts || {}};
   tipoActual = P.tipo;
   $("vHome").hidden = true; $("vProj").hidden = false; $("crumb").hidden = false; $("estado").hidden = false;
   $("crumbName").textContent = `${TIPOS[P.tipo]} / ${P.name}`; document.title = `${P.name} · GoogleFlowKillerVideos`;
   $("cardPersonajes").hidden = P.tipo !== "stick";
+  const sh = P.tipo === "shorts";
+  document.body.classList.toggle("vertical", sh); $("cardShorts").hidden = !sh; $("cardVoz").hidden = sh; $("srtLbl").hidden = sh;
+  for (const el of document.querySelectorAll("[data-sh]")) el.value = P.shorts[el.dataset.sh] || "";
+  $("renderNota").textContent = sh ? "1080x1920, 9:16. Cada plano dura su duración y lleva su texto grande arriba. La música es opcional (paso 3)."
+    : "1080p, 16:9. El vídeo sale sin subtítulos; si marcas la casilla se crea además el .srt aparte.";
   if (P.tipo === "stick") { await Promise.all([cargarEstilo(), cargarComunes()]); pintarEstiloProj(); pintarPersonajes(); }
   $("imgModel").value = P.ajustes.image_model; $("ratio").value = P.ajustes.ratio;
   $("vidModel").value = P.ajustes.video_model || "Omni 1.2 Flash";
@@ -764,7 +787,7 @@ async function abrirProyecto(name) {
   $("srt").checked = P.ajustes.srt !== false; $("subPrevia").checked = !!P.ajustes.subtitulos_previa; seleccion.clear();
   pintarMusDb();
   saveState("Guardado");
-  if (!refsActuales.length) await cargarRefs();
+  await cargarRefs();
   if (!cuentasLista.length) await cargarCuentas(); else pintarCuentasProj();
   previa = null; detenerPrevia();
   refrescarEditor(false);
@@ -776,7 +799,7 @@ async function cerrarProyecto() {
   if (!P) return;
   await guardarYa();
   detenerPrevia();
-  P = null; clearTimeout(pollTimer);
+  P = null; clearTimeout(pollTimer); document.body.classList.remove("vertical");
 }
 
 function irTab(t, push = true) {
@@ -806,7 +829,7 @@ async function guardarYa() {
   if (!P || !savePending) return saving;
   const que = savePending; savePending = null;
   const body = {name: P.name};
-  if (que.guion) body.guion = {jobs: jobsDesdePlanos()};
+  if (que.guion) body.guion = {jobs: jobsDesdePlanos(), ...(P.tipo === "shorts" ? {shorts: P.shorts} : {})};
   if (que.ajustes) body.ajustes = leerAjustes();
   saving = saving.then(async () => {
     try { const r = await api("/api/proyecto/guardar", body); saveState(`Guardado ${r.guardado}`); }
@@ -833,7 +856,7 @@ function planosDesdeJobs(jobs) {
   return jobs.filter(j => (j.type || "image") === "image").map(j => {
     const v = jobs.find(x => x.type === "video" && x.start && x.start.replace(/\.\w+$/, "") === j.name);
     return {name: j.name || "", refs: j.refs || [], img: j.prompt || "", texto: j.texto || (v && v.texto) || "", efecto: j.efecto || "", escena: j.escena || "",
-            anim: j.anim || (v && v.prompt) || "", usar: j.usar || "imagen"};
+            anim: j.anim || (v && v.prompt) || "", usar: j.usar || "imagen", dur: j.dur || ""};
   });
 }
 function asegurarNombres() {
@@ -854,10 +877,11 @@ function jobsDesdePlanos() {
     if ((p.escena || "").trim()) job.escena = p.escena.trim();
     if ((p.anim || "").trim()) job.anim = p.anim.trim();
     if (p.usar === "video") job.usar = "video";
+    if (P.tipo === "shorts" && +p.dur) job.dur = +p.dur;
     return job;
   });
 }
-const segDe = (p) => { const n = (p.texto || "").trim().split(/\s+/).filter(Boolean).length; return n ? Math.max(2, Math.round(n / 2.6)) : 4; };
+const segDe = (p) => { if (P && P.tipo === "shorts") return +p.dur || 4; const n = (p.texto || "").trim().split(/\s+/).filter(Boolean).length; return n ? Math.max(2, Math.round(n / 2.6)) : 4; };
 function thumbDe(name) { const e = P && P.estado && P.estado.planos.find(x => x.name === name); return e && e.thumb; }
 
 function pintarPlanos() {
@@ -880,8 +904,8 @@ function pintarPlanos() {
           <button class="mini ghost" data-dup="${i}" title="Duplicar">⧉</button>
           <button class="mini ghost danger" data-del-pl="${i}" title="Borrar plano">✕</button>
         </div>
-        <span class="lbl">Voz en off (la frase de tu audio mientras se ve esta imagen)</span>
-        <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto)}" placeholder="Vacío = comparte la frase del plano anterior">
+        <span class="lbl">${P.tipo === "shorts" ? "Texto en pantalla (gancho, grande arriba)" : "Voz en off (la frase de tu audio mientras se ve esta imagen)"}</span>
+        <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto)}" placeholder="${P.tipo === "shorts" ? "Vacío = sin texto en este plano" : "Vacío = comparte la frase del plano anterior"}">
         <span class="lbl">Prompt de la foto</span>
         <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
         <span class="lbl">Prompt de animación (opcional: solo si generas su vídeo)</span>
@@ -889,6 +913,7 @@ function pintarPlanos() {
         <div class="bottom">
           <div><span class="lbl">Referencias</span><div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${disp.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="faint">${P.tipo === "stick" ? "Añade personajes a la derecha." : "Sube referencias en el inicio."}</span>`}</div></div>
           <div><span class="lbl" title="Los planos con la misma escena usan la primera imagen de esa escena como referencia (mismo lugar y personajes).">Escena</span><input type="text" data-i="${i}" data-k="escena" value="${esc(p.escena || "")}" placeholder="—" title="Mismo nombre = misma escena. La 1ª imagen de la escena se usa de referencia para las demás."></div>
+          ${P.tipo === "shorts" ? `<div><span class="lbl">Duración (s)</span><input type="number" min="1" max="8" step="1" data-i="${i}" data-k="dur" value="${esc(p.dur || 4)}" style="width:70px"></div>` : ""}
           <div><span class="lbl">Movimiento</span><select data-i="${i}" data-k="efecto">${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
         </div>
       </div>
@@ -909,7 +934,8 @@ function validar() {
   $("errores").textContent = e.join("\n");
   return e;
 }
-function escribirJson() { $("json").value = JSON.stringify({project: P.name, jobs: jobsDesdePlanos()}, null, 2); }
+function escribirJson() { $("json").value = JSON.stringify({project: P.name, ...(P.tipo === "shorts" ? {shorts: P.shorts} : {}), jobs: jobsDesdePlanos()}, null, 2); }
+document.addEventListener("input", (e) => { const k = e.target.dataset && e.target.dataset.sh; if (!k || !P) return; P.shorts[k] = e.target.value; escribirJson(); guardar("guion"); });
 function refrescarEditor(save = true) { asegurarNombres(); pintarPlanos(); escribirJson(); validar(); if (save) guardar("guion"); }
 
 $("planos").addEventListener("input", (e) => {
@@ -934,13 +960,14 @@ $("planos").addEventListener("click", (e) => {
 });
 $("timeline").addEventListener("click", (e) => { const d = e.target.closest("[data-goto]"); if (d) $("pl" + d.dataset.goto).scrollIntoView({behavior: "smooth", block: "center"}); });
 $("addPlano").onclick = () => {
-  P.planos.push({name: "", refs: P.tipo === "stick" ? [] : ["mackenzie", "cabina"].filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: ""});
+  P.planos.push({name: "", refs: P.tipo === "stick" ? [] : (P.tipo === "shorts" ? ["muneca"] : ["mackenzie", "cabina"]).filter(r => refsActuales.includes(r)), img: "", texto: "", efecto: "", dur: P.tipo === "shorts" ? 4 : ""});
   refrescarEditor(); $("pl" + (P.planos.length - 1)).scrollIntoView({behavior: "smooth", block: "center"});
 };
 function importarJson(txt) {
   let g; try { g = JSON.parse(txt); } catch (e) { $("errores").textContent = "El JSON no es válido: " + e.message; return false; }
   if (Array.isArray(g)) g = {jobs: g};
   P.planos = planosDesdeJobs(g.jobs || []);
+  if (P.tipo === "shorts" && g.shorts) { P.shorts = g.shorts; for (const el of document.querySelectorAll("[data-sh]")) el.value = P.shorts[el.dataset.sh] || ""; }
   refrescarEditor(); return true;
 }
 let pegarTimer = null;
@@ -953,6 +980,10 @@ $("cargar").onclick = () => $("jsonFile").click();
 $("jsonFile").onchange = async () => { const f = $("jsonFile").files[0]; $("jsonFile").value = ""; if (f && importarJson(await f.text())) toast("Guion cargado."); };
 $("ejemplo").onclick = () => {
   if (P.planos.length && !confirm("¿Sustituir los planos actuales por el ejemplo?")) return;
+  if (P.tipo === "shorts") {
+    fetch("/ejemplo_short.json").then(r => r.json()).then(g => importarJson(JSON.stringify(g))).catch(() => toast("No encuentro el ejemplo."));
+    return;
+  }
   if (P.tipo === "stick") {
     const pj = refsDisponibles();
     P.planos = [
@@ -1042,11 +1073,11 @@ function pintarResumen() {
   const n = P.planos.length, hechas = (s.planos || []).filter(p => p.thumb).length, m = s.media || {};
   $("sGuion").textContent = n ? `${n} planos` : "vacío";
   $("sImg").textContent = n ? `${hechas}/${n}` : "—";
-  $("sAudio").textContent = m.narracion ? (m.musica ? "voz + música" : "voz") : "sin voz";
+  $("sAudio").textContent = P.tipo === "shorts" ? (m.musica ? "música" : "sin música") : m.narracion ? (m.musica ? "voz + música" : "voz") : "sin voz";
   $("sRender").textContent = m.video ? "listo" : "—";
   const st = document.querySelectorAll(".step");
   st[0].classList.toggle("done", n > 0); st[1].classList.toggle("done", n > 0 && hechas === n);
-  st[2].classList.toggle("done", !!m.tiempos); st[3].classList.toggle("done", !!m.video);
+  st[2].classList.toggle("done", P.tipo === "shorts" ? !!m.musica : !!m.tiempos); st[3].classList.toggle("done", !!m.video);
 }
 
 /* ---------- Generar / rehacer ---------- */
@@ -1155,6 +1186,11 @@ function pintarAudio(s) {
     }
     $("stageVacio").hidden = true; $("play").disabled = false; $("seek").disabled = false;
     $("previaInfo").textContent = `${m.tiempos.planos.length} imágenes · ${fmt(m.tiempos.duracion)}`;
+  } else if (P.tipo === "shorts") {
+    previa = null; $("stageVacio").hidden = false; $("play").disabled = true; $("seek").disabled = true;
+    $("layA").style.opacity = 0; $("layB").style.opacity = 0; $("stageCap").textContent = "";
+    $("stageVacio").textContent = "Los Shorts no llevan voz: sube música si quieres y mira el resultado en el paso Render.";
+    $("previaInfo").textContent = "";
   } else {
     previa = null; $("stageVacio").hidden = false; $("play").disabled = true; $("seek").disabled = true;
     $("layA").style.opacity = 0; $("layB").style.opacity = 0; $("stageCap").textContent = "";
@@ -1242,14 +1278,19 @@ $("subPrevia").addEventListener("change", () => { if (previa) pintarFrame(); });
 function pintarRender(s) {
   const m = s.media || {}, r = s.render;
   const hechas = s.planos.filter(p => p.thumb).length;
-  const items = [
+  const sh = P.tipo === "shorts";
+  const items = sh ? [
+    [s.planos.length > 0 && hechas === s.planos.length, `Imágenes: ${hechas}/${s.planos.length}`],
+    [true, `Duración: ${P.planos.reduce((a, p) => a + (+p.dur || 4), 0)} s · ${P.planos.filter(p => p.usar === "video").length} plano(s) con vídeo`],
+    [true, m.musica ? `Música: ${m.musica.name} · ${$("musDb").value} dB` : "Sin música (opcional)"],
+  ] : [
     [s.planos.length > 0 && hechas === s.planos.length, `Imágenes: ${hechas}/${s.planos.length}`],
     [!!m.narracion, m.narracion ? "Narración subida" : "Falta la narración (paso 3)"],
     [true, m.musica ? `Música: ${m.musica.name} · ${$("musDb").value} dB · ducking ${$("ducking").value}` : "Sin música de fondo (opcional)"],
     [true, $("srt").checked ? "Se creará el archivo .srt" : "Sin subtítulos"],
   ];
   $("checklist").innerHTML = items.map(([ok, t]) => `<li style="color:${ok ? "var(--muted)" : "var(--accent)"}">${ok ? "✓" : "•"} ${esc(t)}</li>`).join("");
-  $("render").disabled = !m.narracion || r.running || !!r.otro || s.gen.running;
+  $("render").disabled = (sh ? !hechas : !m.narracion) || r.running || !!r.otro || s.gen.running;
   $("render").textContent = r.running && r.mode === "render" ? "Renderizando…" : (m.video ? "Volver a renderizar" : "Render");
   $("renderStop").hidden = !r.running;
   const log = $("renderLog");
@@ -1261,7 +1302,8 @@ function pintarRender(s) {
   if (m.video) {
     $("resultado").hidden = false; $("sinVideo").hidden = true;
     if (!$("video").src.endsWith(m.video)) $("video").src = m.video;
-    $("dlVideo").href = m.video; $("dlSrt").href = m.srt || "#"; $("dlSrt").hidden = !m.srt || !$("srt").checked;
+    $("dlVideo").href = m.video; $("dlSrt").href = m.srt || "#"; $("dlSrt").hidden = sh || !m.srt || !$("srt").checked;
+    $("dlTit").hidden = !m.titulos; $("dlTit").href = m.titulos || "#";
   } else { $("resultado").hidden = true; $("sinVideo").hidden = false; }
 }
 $("render").onclick = async () => {

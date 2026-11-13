@@ -3,7 +3,8 @@ flow_web.py - Web local de GoogleFlowKillerVideos.
 
   python flow_web.py            -> abre http://localhost:8765 en tu navegador
 
-Inicio con dos pestañas: «Camioneras Narración» y «Videos Stick». Cada una con
+Inicio con tres pestañas: «Camioneras Narración», «Videos Stick» y «Shorts
+Muñecas» (vertical 9:16, sin voz, render con montaje_shorts.py). Cada una con
 sus proyectos (crear, abrir, duplicar, borrar). Camioneras usa las referencias
 de refs/; Videos Stick usa una imagen de estilo común (refs_stick/) y los
 personajes de cada proyecto (outputs/<proyecto>/personajes/).
@@ -38,7 +39,9 @@ BASE_DIR = Path(__file__).parent.resolve()
 WEB_DIR = BASE_DIR / "web"
 REFS_DIR = BASE_DIR / "refs"                 # referencias de «Camioneras Narración»
 STICK_DIR = BASE_DIR / "refs_stick"          # estilo visual de «Videos Stick»
-TIPOS = {"camioneras": "Camioneras Narración", "stick": "Videos Stick"}
+SHORTS_DIR = BASE_DIR / "refs_shorts"        # referencias de «Shorts Muñecas» (muñeca, taller…)
+TIPOS = {"camioneras": "Camioneras Narración", "stick": "Videos Stick", "shorts": "Shorts Muñecas"}
+SHORTS_DUR = 4                               # duración por defecto de cada plano de un Short
 OUT_DIR = BASE_DIR / "outputs"
 PORT = int(os.getenv("FLOW_WEB_PORT", "8765"))
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
@@ -100,8 +103,12 @@ def find_audio(pdir: Path, stem: str) -> Path | None:
     return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
 
 
-def _all_refs() -> dict[str, str]:
-    return {p.stem: str(p) for p in REFS_DIR.glob("*") if p.suffix.lower() in IMG_EXT}
+def _refs_dir(grupo: str | None) -> Path:
+    return SHORTS_DIR if grupo == "shorts" else REFS_DIR
+
+
+def _all_refs(grupo: str | None = None) -> dict[str, str]:
+    return {p.stem: str(p) for p in _refs_dir(grupo).glob("*") if p.suffix.lower() in IMG_EXT}
 
 
 def estilo_stick() -> Path | None:
@@ -136,6 +143,8 @@ def refs_de(project: str) -> dict[str, str]:
         if est:
             refs["estilo"] = str(est)
         return refs
+    if load_ajustes(project).get("tipo") == "shorts":
+        return _all_refs("shorts")
     return _all_refs()
 
 
@@ -286,8 +295,14 @@ class Job:
             durs[p["name"]] = float(p["t1"]) - float(p["t0"])
         jobs = []
         elegida = str(duracion if duracion is not None else aj.get("video_duracion") or "auto")
+        shorts = aj.get("tipo") == "shorts"
         for j in planos:
-            if elegida.isdigit():
+            if shorts and not elegida.isdigit():
+                try:
+                    seg = int(round(float(j.get("dur") or SHORTS_DUR)))
+                except (TypeError, ValueError):
+                    seg = SHORTS_DUR
+            elif elegida.isdigit():
                 seg = int(elegida)                     # la que eliges tú
             else:
                 d = durs.get(j["name"])                # según su frase
@@ -382,10 +397,12 @@ class Render:
         if self.running:
             raise RuntimeError(f"Ya hay un render en marcha («{self.project}»).")
         pdir = _pdir(project)
+        aj = load_ajustes(project)
+        if aj.get("tipo") == "shorts":
+            return self._start_short(project, pdir, aj)
         voz = find_audio(pdir, "narracion")
         if not voz:
             raise RuntimeError("Sube primero la narración (paso 3).")
-        aj = load_ajustes(project)
         cmd = [sys.executable, str(BASE_DIR / "montaje.py"), str(pdir), str(voz),
                "--transicion", "corte" if aj["transicion"] == "corte" else "fundido"]
         musica = find_audio(pdir, "musica")
@@ -398,6 +415,19 @@ class Render:
             cmd.append("--sin-srt")
         with self.lock:
             self.log, self.mode, self.project, self.exit_code = [], mode, _safe_name(project), None
+        self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, env=SUBPROC_ENV, creationflags=NEW_GROUP)
+        threading.Thread(target=self._reader, args=(self.proc,), daemon=True).start()
+
+    def _start_short(self, project: str, pdir: Path, aj: dict) -> None:
+        """Shorts: sin voz; cada plano dura su "dur" y lleva su texto encima."""
+        cmd = [sys.executable, str(BASE_DIR / "montaje_shorts.py"), str(pdir),
+               "--transicion", "fundido" if aj["transicion"] == "fundido" else "corte"]
+        musica = find_audio(pdir, "musica")
+        if musica:
+            cmd += ["--musica", str(musica), "--musica-db", str(float(aj["musica_db"]))]
+        with self.lock:
+            self.log, self.mode, self.project, self.exit_code = [], "render", _safe_name(project), None
         self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=SUBPROC_ENV, creationflags=NEW_GROUP)
         threading.Thread(target=self._reader, args=(self.proc,), daemon=True).start()
@@ -442,6 +472,9 @@ def project_media(pdir: Path) -> dict:
     srt = pdir / "montaje.srt"
     if srt.exists():
         out["srt"] = _url(srt)
+    tit = pdir / "shorts_titulos.txt"
+    if tit.exists():
+        out["titulos"] = _url(tit)
     return out
 
 
@@ -603,15 +636,21 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 return self._file(WEB_DIR / "index.html", WEB_DIR)
+            if path == "/ejemplo_short.json":
+                return self._file(BASE_DIR / "examples" / "short_munecas.json", BASE_DIR / "examples")
             if path.startswith("/refs/"):
                 return self._file(REFS_DIR / path[len("/refs/"):], REFS_DIR)
+            if path.startswith("/refs_shorts/"):
+                return self._file(SHORTS_DIR / path[len("/refs_shorts/"):], SHORTS_DIR)
             if path.startswith("/outputs/"):
                 return self._file(OUT_DIR / path[len("/outputs/"):], OUT_DIR)
             if path == "/api/cuentas":
                 return self._json({"cuentas": flow_multi.list_accounts()})
             if path == "/api/refs":
-                refs = [{"name": p.stem, "url": f"/refs/{p.name}?v={int(p.stat().st_mtime)}"}
-                        for p in sorted(REFS_DIR.glob("*")) if p.suffix.lower() in IMG_EXT]
+                grupo = q.get("grupo", [""])[0]
+                d, pref = (SHORTS_DIR, "/refs_shorts/") if grupo == "shorts" else (REFS_DIR, "/refs/")
+                refs = [{"name": p.stem, "url": f"{pref}{p.name}?v={int(p.stat().st_mtime)}"}
+                        for p in sorted(d.glob("*")) if p.suffix.lower() in IMG_EXT]
                 return self._json({"refs": refs})
             if path == "/api/estilo":
                 est = estilo_stick()
@@ -648,10 +687,11 @@ class Handler(BaseHTTPRequestHandler):
             ext = Path(data.get("filename", "")).suffix.lower()
             if ext not in IMG_EXT:
                 return self._json({"error": "Formato no admitido (png, jpg, webp)."}, 400)
-            REFS_DIR.mkdir(exist_ok=True)
-            for old in REFS_DIR.glob(f"{ref}.*"):
+            d = _refs_dir(data.get("grupo"))
+            d.mkdir(exist_ok=True)
+            for old in d.glob(f"{ref}.*"):
                 old.unlink()
-            (REFS_DIR / f"{ref}{ext}").write_bytes(base64.b64decode(data["data"]))
+            (d / f"{ref}{ext}").write_bytes(base64.b64decode(data["data"]))
             return self._json({"ok": True})
         if path == "/api/estilo":       # con "name": el del proyecto; sin él: el de por defecto
             ext = Path(data.get("filename", "")).suffix.lower()
@@ -686,7 +726,7 @@ class Handler(BaseHTTPRequestHandler):
                 old.unlink()
             return self._json({"ok": True})
         if path == "/api/ref/borrar":
-            for old in REFS_DIR.glob(f"{_safe_name(data.get('ref', ''))}.*"):
+            for old in _refs_dir(data.get("grupo")).glob(f"{_safe_name(data.get('ref', ''))}.*"):
                 old.unlink()
             return self._json({"ok": True})
         # --- cuentas ---
@@ -712,7 +752,8 @@ class Handler(BaseHTTPRequestHandler):
             _pdir(nuevo).mkdir(parents=True)
             _write_json(_pdir(nuevo) / "guion.json", {"project": nuevo, "jobs": data.get("jobs") or []})
             tipo = data.get("tipo") if data.get("tipo") in TIPOS else "camioneras"
-            _write_json(_pdir(nuevo) / "ajustes.json", {**AJUSTES_DEF, "tipo": tipo})
+            extra = {"ratio": "9:16", "transicion": "corte", "srt": False, "musica_db": -12} if tipo == "shorts" else {}
+            _write_json(_pdir(nuevo) / "ajustes.json", {**AJUSTES_DEF, "tipo": tipo, **extra})
             return self._json({"ok": True, "name": nuevo})
         if path == "/api/proyecto/duplicar":
             src = _pdir(name)
@@ -739,6 +780,8 @@ class Handler(BaseHTTPRequestHandler):
             if "guion" in data:
                 old = load_guion(name)
                 g = {**old, "jobs": data["guion"].get("jobs", []), "project": pdir.name}
+                if "shorts" in data["guion"]:          # títulos, descripción y hashtags del Short
+                    g["shorts"] = data["guion"]["shorts"] or {}
                 _write_json(pdir / "guion.json", g)
             if "ajustes" in data:
                 aj = {**load_ajustes(name), **{k: v for k, v in data["ajustes"].items() if k in AJUSTES_DEF}}
@@ -799,6 +842,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     REFS_DIR.mkdir(exist_ok=True)
     STICK_DIR.mkdir(exist_ok=True)
+    SHORTS_DIR.mkdir(exist_ok=True)
     OUT_DIR.mkdir(exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"
