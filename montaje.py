@@ -203,6 +203,22 @@ def load_audio_16k(audio: Path):
     return np.frombuffer(r.stdout, dtype=np.float32).copy()
 
 
+# Progreso para la web: «@@PROGRESO <0-1> <etapa> | <detalle>» (la web lo convierte en barra).
+_PESOS = {"transcribir": (0.0, 0.25), "montar": (0.25, 0.9), "unir": (0.9, 0.96), "audio": (0.96, 1.0)}
+_FORMATO = [0, 1]          # nº de formato actual y total (horizontal / vertical / ambos)
+
+
+def progreso(etapa: str, frac: float, detalle: str = "") -> None:
+    a, b = _PESOS[etapa]
+    if etapa != "transcribir":
+        i, n = _FORMATO
+        a2 = 0.25 + (a - 0.25) / n + i * 0.75 / n
+        b2 = 0.25 + (b - 0.25) / n + i * 0.75 / n
+        a, b = a2, b2
+    total = a + (b - a) * max(0.0, min(1.0, frac))
+    print(f"@@PROGRESO {total:.4f} {etapa} | {detalle}", flush=True)
+
+
 def transcribe(audio: Path, model_size: str) -> list[dict]:
     from faster_whisper import WhisperModel
     samples = load_audio_16k(audio)
@@ -210,10 +226,13 @@ def transcribe(audio: Path, model_size: str) -> list[dict]:
     for device, ctype in (("cuda", "float16"), ("cpu", "int8")):
         try:
             model = WhisperModel(model_size, device=device, compute_type=ctype, cpu_threads=HILOS)
-            segments, _ = model.transcribe(samples, language="es", word_timestamps=True,
-                                           vad_filter=True)
-            words = [{"w": w.word.strip(), "start": w.start, "end": w.end}
-                     for seg in segments for w in (seg.words or [])]
+            segments, info = model.transcribe(samples, language="es", word_timestamps=True,
+                                              vad_filter=True)
+            dur = float(getattr(info, "duration", 0) or len(samples) / 16000) or 1.0
+            words = []
+            for seg in segments:
+                words += [{"w": w.word.strip(), "start": w.start, "end": w.end} for w in (seg.words or [])]
+                progreso("transcribir", seg.end / dur, f"Transcribiendo {ts(seg.end)} de {ts(dur)}")
             print(f"  Transcripción con {'GPU' if device == 'cuda' else 'CPU'}: {len(words)} palabras.")
             return words
         except Exception as e:
@@ -549,6 +568,7 @@ def main() -> int:
             W, H = (1920, 1080) if args.res == 1080 else (1280, 720)
             destino = out_file
         print(f"— Formato {fmt} ({W}x{H}) -> {destino.name}")
+        _FORMATO[0], _FORMATO[1] = formatos.index(fmt), len(formatos)
         tmp = folder / "_montaje_tmp"
         shutil.rmtree(tmp, ignore_errors=True)
         tmp.mkdir()
@@ -566,8 +586,11 @@ def main() -> int:
                     line = f"[{fmt}] " + line
                 print("   " + line)
                 lines.append(line)
+                progreso("montar", i / len(pieces), f"Plano {i} de {len(pieces)}")
             video_only = tmp / "video.mp4"
+            progreso("unir", 0, "Uniendo los planos")
             join_parts(parts, durs, fade, video_only)
+            progreso("audio", 0, "Mezclando la voz y la música")
             if musica and musica.exists():
                 print(f"   Música: {musica.name} · {args.musica_db:+.0f} dB · ducking {args.ducking}")
                 mix_audio(video_only, audio, musica, total, args.musica_db, args.ducking, destino, words)
@@ -578,6 +601,7 @@ def main() -> int:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         salidas.append(destino)
+        progreso("audio", 1, "Terminado")
         print(f"   OK -> {destino}")
 
     (folder / "montaje_planos.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")

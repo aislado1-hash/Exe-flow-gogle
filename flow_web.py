@@ -27,6 +27,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -407,10 +408,24 @@ class Render:
         self.mode = None
         self.project = None
         self.exit_code = None
+        self.prog: dict = {}
 
     @property
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
+
+    def progreso(self) -> dict:
+        """Avance del render: fracción, etapa, detalle, segundos pasados y tiempo estimado restante."""
+        p = dict(self.prog)
+        if not p:
+            return {}
+        ahora = time.time()
+        p["pasado"] = int(ahora - p["t0"])
+        f, f1, t1 = p["frac"], p.get("f1", 0.0), p.get("t1", p["t0"])
+        avance = f - f1
+        if self.running and avance > 0.02 and ahora - t1 > 4:
+            p["restante"] = int((ahora - t1) * (1 - f) / avance)
+        return {k: v for k, v in p.items() if k not in ("t0", "t1", "f1")}
 
     def start(self, project: str, mode: str) -> None:
         if self.running:
@@ -438,6 +453,7 @@ class Render:
             cmd.append("--sin-srt")
         with self.lock:
             self.log, self.mode, self.project, self.exit_code = [], mode, _safe_name(project), None
+            self.prog = {"frac": 0.0, "etapa": "inicio", "detalle": "Preparando…", "t0": time.time()}
         self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=SUBPROC_ENV, creationflags=NEW_GROUP)
         threading.Thread(target=self._reader, args=(self.proc,), daemon=True).start()
@@ -451,17 +467,34 @@ class Render:
             cmd += ["--musica", str(musica), "--musica-db", str(float(aj["musica_db"]))]
         with self.lock:
             self.log, self.mode, self.project, self.exit_code = [], "render", _safe_name(project), None
+            self.prog = {"frac": 0.0, "etapa": "inicio", "detalle": "Preparando…", "t0": time.time()}
         self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=SUBPROC_ENV, creationflags=NEW_GROUP)
         threading.Thread(target=self._reader, args=(self.proc,), daemon=True).start()
 
     def _reader(self, proc) -> None:
         for raw in proc.stdout:
+            line = raw.decode("utf-8", errors="replace").rstrip()
             with self.lock:
-                self.log = (self.log + [raw.decode("utf-8", errors="replace").rstrip()])[-500:]
+                if line.startswith("@@PROGRESO "):
+                    try:
+                        cab, _, detalle = line[11:].partition(" | ")
+                        frac, etapa = cab.split(" ", 1)
+                        frac = float(frac)
+                        if "t1" not in self.prog and frac < 0.999:
+                            # el ritmo se mide desde el primer aviso (si la transcripción
+                            # ya estaba hecha, el render empieza en 25 %)
+                            self.prog["t1"], self.prog["f1"] = time.time(), frac
+                        self.prog.update(frac=frac, etapa=etapa.strip(), detalle=detalle.strip())
+                    except ValueError:
+                        pass
+                    continue
+                self.log = (self.log + [line])[-500:]
         code = proc.wait()
         with self.lock:
             self.exit_code = code
+            if code == 0 and self.prog:
+                self.prog.update(frac=1.0, etapa="hecho", detalle="Terminado")
 
     def stop(self) -> None:
         if self.running:
@@ -550,6 +583,7 @@ def project_state(project: str, with_guion: bool = False) -> dict:
         rlive = RENDER.project == pdir.name
         render = {"running": RENDER.running and rlive, "mode": RENDER.mode if rlive else None,
                   "exit_code": RENDER.exit_code if rlive else None, "log": RENDER.log[-200:] if rlive else [],
+                  "progreso": RENDER.progreso() if rlive else {},
                   "otro": RENDER.project if RENDER.running and not rlive else None}
     revisando = revisar_imagenes.revisar_en_segundo_plano(sin_revisar) if sin_revisar else 0
     out = {"project": pdir.name, "planos": planos, "gen": gen, "render": render, "revisando": revisando,

@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GoogleFlowKillerVideos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0d0e10; --panel: #16181b; --panel2: #1e2125; --panel3: #262a2f; --line: #2a2e33; --line2: #3a3f46;
@@ -202,11 +204,166 @@
            display: none; max-width: 440px; z-index: 30; box-shadow: 0 8px 30px #0008; }
   .lightbox { position: fixed; inset: 0; background: #000d; display: none; place-items: center; z-index: 20; cursor: zoom-out; }
   .lightbox img { max-width: 94vw; max-height: 90vh; border-radius: 8px; }
+  /* =====================================================================
+     DISEÑO v3 — capa visual (compacta y profesional). Va al final para
+     sobrescribir lo anterior sin tocar la lógica.
+     ===================================================================== */
+  :root {
+    --bg: #0b0c0e; --panel: #131518; --panel2: #191c20; --panel3: #22262b; --line: #23272d; --line2: #343a42;
+    --text: #eceef1; --muted: #a0a7b0; --faint: #6c737c; --accent: #f5b93f; --accent-2: #ff8a3d; --accent-ink: #1b1303;
+    --ok: #3ecf8e; --err: #f2555a; --run: #5ab0ff; --radius: 10px; --r-sm: 7px;
+    --shadow: 0 1px 0 #ffffff08 inset, 0 10px 30px -18px #000;
+    --ring: 0 0 0 3px #f5b93f33;
+  }
+  body { font: 13px/1.45 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased;
+         background: radial-gradient(1200px 500px at 70% -200px, #f5b93f0d, transparent 60%), var(--bg); }
+  ::selection { background: #f5b93f55; }
+  * { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 10px; border: 2px solid var(--bg); }
+  code, pre.log, .tc, textarea.mono { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; }
+
+  /* cabecera */
+  header { padding: 9px 22px; gap: 12px; border-bottom: 1px solid var(--line); background: #0b0c0ecc; backdrop-filter: blur(12px) saturate(140%); }
+  .logo { font-size: 14.5px; font-weight: 700; letter-spacing: -.2px; display: flex; align-items: center; gap: 9px; }
+  .logo b { font-weight: 700; }
+  .logo span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .logo .marca { font-style: normal; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-size: 10px;
+                 color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 4px 14px -4px #ff8a3d88; }
+  .crumb { font-size: 13px; }
+  .badge { font-size: 11.5px; font-weight: 500; padding: 3px 10px; border: 1px solid var(--line); }
+  .badge.run { background: #0f2238; border-color: #1d3d60; color: var(--run); }
+  .badge.run::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+                       margin-right: 7px; vertical-align: 1px; animation: latido 1.2s ease-in-out infinite; }
+  .badge.ok { background: #0e2a1d; border-color: #1b4a33; }
+  @keyframes latido { 50% { opacity: .25; } }
+
+  main { max-width: 1560px; padding: 16px 22px 48px; }
+
+  /* tarjetas y textos */
+  section.card { background: linear-gradient(180deg, #ffffff05, transparent 40%), var(--panel); border-color: var(--line);
+                 border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
+  h2 { font-size: 11px; letter-spacing: 1.1px; font-weight: 600; color: var(--faint); margin-bottom: 10px; }
+  .head { margin-bottom: 10px; }
+  .muted { font-size: 12px; } .faint { font-size: 11.5px; line-height: 1.5; }
+  label.lbl, .lbl { font-size: 11px; font-weight: 500; color: var(--faint); margin: 8px 0 3px; letter-spacing: .2px; }
+  .lbl .opc { font-weight: 400; color: var(--faint); opacity: .7; margin-left: 4px; }
+
+  /* controles */
+  input[type=text], input[type=number], input[type=password], select, textarea {
+    background: #0f1114; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 9px; transition: border-color .15s, box-shadow .15s; }
+  input[type=text]:hover, select:hover, textarea:hover { border-color: var(--line2); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #f5b93f99; box-shadow: var(--ring); }
+  textarea { font-size: 12.5px; min-height: 0; line-height: 1.5; }
+  button { border-radius: var(--r-sm); padding: 6px 12px; font-size: 12.5px; font-weight: 500; background: var(--panel2);
+           border-color: var(--line); transition: background .15s, border-color .15s, transform .05s; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button.primary { background: linear-gradient(180deg, #ffc65a, var(--accent)); border-color: #e0a52f; color: var(--accent-ink);
+                   font-weight: 600; box-shadow: 0 6px 18px -10px #f5b93f; }
+  button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffd072, #f8c04f); }
+  button.mini { padding: 3px 8px; font-size: 11.5px; }
+  button.ghost { color: var(--faint); }
+  .chip { font-size: 10.5px; font-weight: 500; padding: 1px 7px; letter-spacing: .2px; }
+  details summary { font-size: 12px; margin-top: 10px; }
+  details summary:hover { color: var(--text); }
+  pre.log { font-size: 11.5px; background: #08090a; max-height: 260px; }
+  .empty { padding: 26px 18px; font-size: 12.5px; background: #ffffff03; }
+
+  /* inicio */
+  .tipos { gap: 6px; margin-bottom: 14px; }
+  .tipo { padding: 8px 14px; border-radius: 9px; font-size: 13px; }
+  .tipo.on { background: #f5b93f12; }
+  .proyectos { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .pcard { border-radius: var(--radius); background: var(--panel2); }
+  .pcard:hover { border-color: #f5b93f55; transform: translateY(-2px); box-shadow: 0 14px 30px -18px #000; }
+  .pcard .body { padding: 9px 10px 9px; }
+  .pcard .nm { font-size: 13px; }
+  .home { grid-template-columns: 1fr 320px; gap: 14px; }
+
+  /* pasos: control segmentado */
+  .steps { display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 14px; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 11px; flex-wrap: wrap; }
+  .step { padding: 6px 14px 6px 8px; border: 0; border-radius: 8px; background: transparent; gap: 9px; font-weight: 500; font-size: 13px; }
+  .step:hover { background: var(--panel2); color: var(--text); }
+  .step .n { width: 20px; height: 20px; font-size: 11px; }
+  .step .s { font-size: 10.5px; margin-top: -1px; }
+  .step.on { background: var(--panel3); border: 0; box-shadow: 0 0 0 1px #f5b93f44 inset; }
+  .two { grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
+  .sticky { top: 58px; }
+  #volver { padding: 4px 8px; }
+
+  /* editor de planos: compacto */
+  .timeline { height: 22px; border-radius: 7px; margin-bottom: 10px; background: var(--panel2); gap: 1px; }
+  .timeline div { font-size: 10px; background: #3d7fc4; color: #e8f2ff; border-right: 0; transition: filter .15s; }
+  .timeline div:hover { filter: brightness(1.3); }
+  .timeline div.sin { background: #2c333b; color: var(--faint); }
+  .timeline.densa { height: 10px; border-radius: 5px; }
+  .timeline.densa div { font-size: 0; }
+  .plano { grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 10px 12px; margin-bottom: 8px; border-radius: var(--radius);
+           background: var(--panel2); border-left-width: 2px; transition: border-color .15s; }
+  .plano:hover { border-color: var(--line2); border-left-color: var(--run); }
+  .plano:focus-within { border-color: #f5b93f55; border-left-color: var(--accent); box-shadow: var(--ring); }
+  .plano .mini-img { border-radius: 7px; align-self: start; }
+  .plano .top { gap: 6px; margin-bottom: 6px; }
+  .plano .num { font-size: 12px; min-width: 22px; height: 20px; padding: 0 6px; border-radius: 6px; background: var(--panel3); display: grid; place-items: center; }
+  .plano .tiempo { font-size: 11px; font-variant-numeric: tabular-nums; }
+  .plano .top .mini.ghost { opacity: .45; padding: 2px 6px; }
+  .plano:hover .top .mini.ghost { opacity: 1; }
+  .plano input.narr { font-style: italic; color: #dfe3e8; background: #f5b93f0a; border-color: #f5b93f22; }
+  .plano .prompts { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px; }
+  @media (max-width: 1150px) { .plano .prompts { grid-template-columns: 1fr; } }
+  .plano .prompts textarea { height: 62px; }
+  .plano .bottom { grid-template-columns: minmax(0, 1fr) 120px 160px; gap: 8px; margin-top: 8px; align-items: center; }
+  .plano .bottom .lbl { display: none; }
+  .plano .bottom input, .plano .bottom select { padding: 4px 8px; font-size: 12px; }
+  .plano .prompts .lbl { margin-top: 6px; }
+  .refchip { font-size: 11px; padding: 2px 9px; }
+  .refchip:hover { color: var(--text); border-color: var(--line2); }
+  .refchip.on { background: #f5b93f1a; border-color: #f5b93f66; }
+
+  /* galería */
+  .galeria { grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); gap: 10px; }
+  .foto { border-radius: var(--radius); transition: border-color .15s, transform .15s; }
+  .foto:hover { border-color: var(--line2); transform: translateY(-1px); }
+  .foto .pie { padding: 7px 8px; gap: 5px; }
+  .foto .txt { font-size: 11.5px; }
+  .foto .l1 button.mini { padding: 2px 7px; font-size: 11px; }
+  .foto .usar { font-size: 11px; }
+
+  /* audio / render */
+  .stage { border-radius: var(--radius); box-shadow: 0 20px 40px -24px #000; }
+  video { border-radius: var(--radius); }
+  .toast { background: #1d2126ee; backdrop-filter: blur(8px); border-color: var(--line2); border-radius: 10px; font-size: 12.5px;
+           box-shadow: 0 18px 40px -12px #000c; animation: entra .2s ease-out; }
+  @keyframes entra { from { transform: translateY(8px); opacity: 0; } }
+
+  /* progreso del render */
+  .prog { border: 1px solid #1d3d60; background: linear-gradient(180deg, #0f2238, #0d1520); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+  .prog-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .prog-pct { font-size: 30px; font-weight: 700; letter-spacing: -1px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .prog-etapa { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .prog-tiempos { display: flex; gap: 18px; }
+  .prog-tiempos div { display: flex; flex-direction: column; align-items: flex-end; }
+  .prog-tiempos span { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .8px; }
+  .prog-tiempos b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .prog-bar { height: 8px; border-radius: 6px; background: #ffffff10; overflow: hidden; margin-top: 12px; }
+  .prog-bar i { display: block; height: 100%; width: 0; border-radius: 6px; transition: width .6s ease;
+                background: linear-gradient(90deg, var(--run), #8bd0ff); position: relative; overflow: hidden; }
+  .prog-bar i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff55, transparent);
+                       animation: brillo 1.6s linear infinite; transform: translateX(-100%); }
+  @keyframes brillo { to { transform: translateX(100%); } }
+  .prog-fases { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .prog-fases span { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid #ffffff14; color: var(--faint); }
+  .prog-fases span.on { color: var(--run); border-color: #5ab0ff66; background: #5ab0ff14; }
+  .prog-fases span.ok { color: var(--ok); border-color: #3ecf8e44; }
+  .prog-fases span.ok::before { content: "✓ "; }
+
 </style>
 </head>
 <body>
 <header>
-  <div class="logo" id="goHome">GoogleFlow<span>Killer</span>Videos</div>
+  <div class="logo" id="goHome"><i class="marca">▶</i><b>GoogleFlow<span>Killer</span>Videos</b></div>
   <div class="crumb" id="crumb" hidden><span>/</span><b id="crumbName"></b></div>
   <div class="spacer"></div>
   <span class="save" id="saveState"></span>
@@ -542,8 +699,16 @@
               <a id="dlSrt" download><button>Descargar subtítulos .srt</button></a>
             </div>
           </div>
+          <div class="prog" id="renderProg" hidden>
+            <div class="prog-top">
+              <div><div class="prog-pct" id="rpPct">0 %</div><div class="prog-etapa" id="rpEtapa">Preparando…</div></div>
+              <div class="prog-tiempos"><div><span>Tiempo</span><b id="rpPasado">0:00</b></div><div><span>Quedan</span><b id="rpQueda">calculando…</b></div></div>
+            </div>
+            <div class="prog-bar"><i id="rpBar"></i></div>
+            <div class="prog-fases" id="rpFases"><span data-f="transcribir">Transcribir</span><span data-f="montar">Montar planos</span><span data-f="unir">Unir</span><span data-f="audio">Audio</span></div>
+          </div>
           <div class="empty" id="sinVideo">Aún no hay vídeo. Pulsa <b>Render</b>.</div>
-          <pre class="log" id="renderLog" hidden></pre>
+          <details id="renderLogBox" hidden><summary>Ver registro del render</summary><pre class="log" id="renderLog"></pre></details>
         </section>
         <aside class="sticky">
           <section class="card">
@@ -1010,21 +1175,23 @@ function pintarPlanos() {
           <button class="mini ghost" data-dup="${i}" title="Duplicar">⧉</button>
           <button class="mini ghost danger" data-del-pl="${i}" title="Borrar plano">✕</button>
         </div>
-        <span class="lbl">Voz en off (la frase de tu audio mientras se ve esta imagen)</span>
-        <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto)}" placeholder="Vacío = comparte la frase del plano anterior">
-        <span class="lbl">Prompt de la foto</span>
-        <textarea data-i="${i}" data-k="img">${esc(p.img)}</textarea>
-        <span class="lbl">Prompt de animación (opcional: solo si generas su vídeo)</span>
-        <textarea data-i="${i}" data-k="anim" rows="2" placeholder="Qué se mueve: p. ej. «la cámara avanza despacio, el humo sube del barco, la gente camina»">${esc(p.anim || "")}</textarea>
+        <input type="text" class="narr" data-i="${i}" data-k="texto" value="${esc(p.texto)}" placeholder="Voz en off: la frase que suena mientras se ve esta imagen" title="Voz en off (vacío = comparte la frase del plano anterior)">
+        <div class="prompts">
+          <div><span class="lbl">Prompt de la foto</span>
+            <textarea data-i="${i}" data-k="img" rows="3">${esc(p.img)}</textarea></div>
+          <div><span class="lbl">Animación <span class="opc">opcional</span></span>
+            <textarea data-i="${i}" data-k="anim" rows="3" placeholder="Qué se mueve: «la cámara avanza despacio, el humo sube…»">${esc(p.anim || "")}</textarea></div>
+        </div>
         <div class="bottom">
           <div><span class="lbl">Referencias</span><div class="refsel">${refsFoto.map(r => `<span class="refchip ${(p.refs || []).includes(r) ? "on" : ""} ${disp.includes(r) ? "" : "bad"}" data-ref="${esc(r)}" data-i="${i}">${esc(r)}</span>`).join("") || `<span class="faint">${P.tipo === "stick" ? "Añade personajes a la derecha." : "Sube referencias en el inicio."}</span>`}</div></div>
-          <div><span class="lbl" title="Los planos con la misma escena usan la primera imagen de esa escena como referencia (mismo lugar y personajes).">Escena</span><input type="text" data-i="${i}" data-k="escena" value="${esc(p.escena || "")}" placeholder="—" title="Mismo nombre = misma escena. La 1ª imagen de la escena se usa de referencia para las demás."></div>
+          <div><span class="lbl" title="Los planos con la misma escena usan la primera imagen de esa escena como referencia (mismo lugar y personajes).">Escena</span><input type="text" data-i="${i}" data-k="escena" value="${esc(p.escena || "")}" placeholder="Escena" title="Mismo nombre = misma escena. La 1ª imagen de la escena se usa de referencia para las demás."></div>
           <div><span class="lbl">Movimiento</span><select data-i="${i}" data-k="efecto">${Object.entries(EFECTOS).map(([k, v]) => `<option value="${k}" ${(p.efecto || "") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
         </div>
       </div>
     </div>`;
   }).join("") : `<div class="empty">Este proyecto aún no tiene planos.<br><br>Pega el JSON que te da Claude en <b>«JSON del guion»</b> (abajo), cárgalo con <b>Cargar JSON…</b> o pulsa <b>+ Añadir plano</b>.</div>`;
   $("timeline").innerHTML = tl.join("");
+  $("timeline").classList.toggle("densa", P.planos.length > 36);
   $("timeline").hidden = !P.planos.length;
   if (!P.planos.length) $("jsonBox").open = true;
   pintarResumen();
@@ -1121,7 +1288,9 @@ function pintarEstado(s) {
   const g = s.gen, r = s.render, m = s.media || {};
   const b = $("estado");
   if (g.running) { b.className = "badge run"; b.textContent = g.kind === "video" ? "generando vídeos…" : "generando imágenes…"; }
-  else if (r.running) { b.className = "badge run"; b.textContent = r.mode === "render" ? "renderizando…" : "calculando tiempos…"; }
+  else if (r.running) { b.className = "badge run";
+    const pr = r.progreso || {};
+    b.textContent = r.mode === "render" ? `renderizando ${Math.round((pr.frac || 0) * 100)} %${pr.restante != null ? " · ~" + dur(pr.restante) : ""}` : "calculando tiempos…"; }
   else if (m.video || m.video_vertical) { b.className = "badge ok"; b.textContent = "vídeo listo"; }
   else { b.className = "badge"; b.textContent = "en edición"; }
   // imágenes
@@ -1576,6 +1745,22 @@ for (const id of ["musDb", "ducking", "subPrevia"]) $(id).addEventListener("inpu
 $("subPrevia").addEventListener("change", () => { if (previa) pintarFrame(); });
 
 /* ---------- Render ---------- */
+const ETAPAS = {inicio: "Preparando…", transcribir: "Transcribiendo la narración", montar: "Montando los planos",
+                unir: "Uniendo los planos", audio: "Mezclando la voz y la música", hecho: "Terminado"};
+const dur = (t) => t == null ? "" : (t >= 3600 ? `${Math.floor(t / 3600)} h ${Math.floor(t % 3600 / 60)} min` : t >= 60 ? `${Math.floor(t / 60)} min ${String(t % 60).padStart(2, "0")} s` : `${t} s`);
+function pintarProgreso(r) {
+  const p = r.progreso || {}, box = $("renderProg");
+  box.hidden = !(r.running && r.mode === "render");
+  if (box.hidden) return;
+  const pct = Math.round((p.frac || 0) * 100);
+  $("rpPct").textContent = `${pct} %`;
+  $("rpBar").style.width = Math.max(2, pct) + "%";
+  $("rpEtapa").textContent = (ETAPAS[p.etapa] || "Renderizando") + (p.detalle && p.etapa !== "inicio" ? ` · ${p.detalle}` : "");
+  $("rpPasado").textContent = fmt(p.pasado || 0);
+  $("rpQueda").textContent = p.restante != null ? "~" + dur(p.restante) : "calculando…";
+  const orden = ["transcribir", "montar", "unir", "audio"], k = orden.indexOf(p.etapa);
+  document.querySelectorAll("#rpFases span").forEach((el, i) => { el.className = i < k ? "ok" : i === k ? "on" : ""; });
+}
 function pintarRender(s) {
   const m = s.media || {}, r = s.render;
   const hechas = s.planos.filter(p => p.thumb).length;
@@ -1591,8 +1776,10 @@ function pintarRender(s) {
   $("renderStop").hidden = !r.running;
   const log = $("renderLog");
   const mostrar = r.running || (r.exit_code && r.exit_code !== 0);
-  log.hidden = !mostrar;
+  $("renderLogBox").hidden = !mostrar;
+  if (r.exit_code && r.exit_code !== 0) $("renderLogBox").open = true;
   if (mostrar) { log.textContent = (r.log || []).join("\n"); log.scrollTop = log.scrollHeight; }
+  pintarProgreso(r);
   $("renderInfo").textContent = r.running ? (r.mode === "render" ? "renderizando…" : "calculando tiempos…")
     : (r.exit_code ? "falló: mira el registro" : (r.otro ? `render en marcha en «${r.otro}»` : ""));
   const hayV = !!m.video_vertical;

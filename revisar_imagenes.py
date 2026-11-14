@@ -21,8 +21,6 @@ _lock = threading.Lock()
 _pendientes: set[str] = set()
 _hilo: threading.Thread | None = None
 
-FILAS_MUESTRA = 96          # la imagen se reduce a 96 filas para mirarla
-FILAS_LISAS_MIN = 12        # >= 12 filas finales idénticas (1/8 de la imagen) = dañada
 
 
 def _final_ok(path: Path) -> bool:
@@ -59,21 +57,29 @@ def revisar(path: Path) -> str | None:
             w, h = im.size
             if w < 16 or h < 16:
                 return "imagen demasiado pequeña"
-            g = im.convert("L").resize((64, FILAS_MUESTRA))
+            # La octava parte de abajo, a tamaño real: si TODOS sus píxeles son
+            # exactamente del mismo color, la imagen se cortó (una foto real
+            # siempre tiene algo de variación o ruido).
+            alto = max(8, h // 8)
+            abajo = im.convert("RGB").crop((0, h - alto, w, h))
+            ext = abajo.getextrema()
     except ImportError:
         return None                       # sin Pillow solo vale la señal 1
     except Exception:
         return "descarga incompleta"
-    px = g.load()
-    lisas = 0
-    for y in range(FILAS_MUESTRA - 1, -1, -1):
-        fila = [px[x, y] for x in range(64)]
-        if max(fila) - min(fila) <= 1:
-            lisas += 1
-        else:
-            break
-    if lisas >= FILAS_LISAS_MIN:
-        return f"la parte de abajo ({round(lisas * 100 / FILAS_MUESTRA)} %) es de un solo color"
+    if all(lo == hi for lo, hi in ext):
+        # ¿Hasta dónde llega el bloque liso? (para el aviso)
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                rgb = im.convert("RGB")
+                color = rgb.getpixel((0, h - 1))
+                y = h - alto
+                while y > 0 and rgb.crop((0, y - 1, w, y)).getextrema() == tuple((c, c) for c in color):
+                    y -= 1
+            return f"la parte de abajo ({round((h - y) * 100 / h)} %) es de un solo color"
+        except Exception:
+            return "la parte de abajo es de un solo color"
     return None
 
 
