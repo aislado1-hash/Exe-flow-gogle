@@ -72,7 +72,56 @@ HILOS = max(1, int((os.cpu_count() or 4) * USO_CPU))
 _PRIORIDAD = {"creationflags": 0x00004000} if os.name == "nt" else {}
 
 
+_NVENC = None
+
+
+def nvenc_disponible() -> bool:
+    """¿Puede la GPU NVIDIA codificar vídeo (h264_nvenc)? Se prueba una vez."""
+    global _NVENC
+    if _NVENC is None:
+        if os.environ.get("RENDER_SIN_GPU"):
+            _NVENC = False
+        else:
+            try:
+                r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                                    "-i", "color=c=black:s=256x256:d=0.2", "-c:v", "h264_nvenc",
+                                    "-f", "null", "-"], capture_output=True, text=True, timeout=30,
+                                   encoding="utf-8", errors="replace", **_PRIORIDAD)
+                _NVENC = r.returncode == 0
+            except Exception:
+                _NVENC = False
+        print("  Codificando con la GPU (NVENC)." if _NVENC else
+              "  Codificando con el procesador (la GPU no está disponible para ffmpeg).", flush=True)
+    return _NVENC
+
+
+def _a_gpu(args: list[str]) -> list[str]:
+    """Cambia libx264 por h264_nvenc con calidad equivalente."""
+    out, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "-c:v" and i + 1 < len(args) and args[i + 1] == "libx264":
+            out += ["-c:v", "h264_nvenc"]; i += 2; continue
+        if a == "-preset" and i + 1 < len(args):
+            out += ["-preset", "p5"]; i += 2; continue
+        if a == "-crf" and i + 1 < len(args):
+            out += ["-rc", "vbr", "-cq", str(max(int(float(args[i + 1])), 1)), "-b:v", "0"]; i += 2; continue
+        out.append(a); i += 1
+    return out
+
+
 def run(args: list[str]) -> None:
+    global _NVENC
+    if "libx264" in args and nvenc_disponible():
+        try:
+            return _run(_a_gpu(args))
+        except RuntimeError as e:
+            print(f"  La GPU falló en este paso ({str(e)[:120]}); sigo con el procesador.", flush=True)
+            _NVENC = False
+    return _run(args)
+
+
+def _run(args: list[str]) -> None:
     # -threads va justo antes del archivo de salida (el último argumento)
     args = [*args[:-1], "-threads", str(HILOS), args[-1]]
     r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
