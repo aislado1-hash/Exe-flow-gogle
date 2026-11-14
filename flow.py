@@ -211,7 +211,7 @@ async def _gen_video(prompt, ratio, model, count, start, end, out_path, duration
     if not download:
         # Se queda en Flow; tú lo descargas a mano cuando quieras.
         return "en Flow (sin descargar)"
-    return await flow.download_latest(out_path, resolution="720p", is_video=True)
+    return await flow.download_latest(out_path, resolution="1080p", is_video=True)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ async def _batch_videos_paralelo(jobs, defaults, references, project_dir, d_rati
         await flow.animate_reference(path, conf)
 
     async def download(out, card):
-        return await flow.download_latest(out, resolution="720p", is_video=True, card=card)
+        return await flow.download_latest(out, resolution="1080p", is_video=True, card=card)
 
     res = await generar_videos_en_paralelo(
         items, flow.upload_reference, animate, configure_video, flow.submit_prompt, download,

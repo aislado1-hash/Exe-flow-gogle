@@ -19,6 +19,7 @@ SEL_RESULT_CARD = 'flow-grid-tile-container, flow-tile-container, [aria-roledesc
 SEL_MORE_MENU   = 'button[aria-label="Más opciones"], button:has(:is(i, mat-icon):text-is("more_vert"))'
 SEL_DL_ITEM     = '[role="menuitem"]:has-text("Descargar"), button:has(:is(i, mat-icon):text-is("download"))'
 SEL_DL_RES = {
+    "1080p": '[role="menuitem"]:has-text("1080p")',
     "1K": '[role="menuitem"]:has-text("1K")',
     "2K": '[role="menuitem"]:has-text("2K")',
     "720p": '[role="menuitem"]:has-text("720p")',
@@ -326,7 +327,7 @@ async def download_latest(output_path: str, resolution: str = "1K", is_video: bo
 
     # Disparar la descarga dentro del listener oficial de Playwright
     print(f"  [download 5/5] Clic en la opción de descarga y esperando evento...")
-    async with page.expect_download(timeout=60_000) as info:
+    async with page.expect_download(timeout=240_000 if resolution == "1080p" else 60_000) as info:
         await target_loc.click()
 
     download = await info.value
