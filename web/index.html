@@ -436,7 +436,10 @@
               <div>
                 <label class="lbl">Voz</label>
                 <div class="row"><span id="vozElegida" class="muted" style="flex:1">Ninguna elegida</span>
-                  <button class="ghost mini" id="vozPrevSel" hidden title="Escuchar la voz elegida">▶</button></div>
+                  <button class="ghost mini" id="vozPrevSel" hidden title="Escuchar la voz elegida">▶</button>
+                  <button class="mini" id="vozGuardarSel" hidden title="Guardar esta voz con su velocidad y modelo en «Mis voces»">☆ Guardar</button></div>
+                <label class="lbl">Mis voces</label>
+                <div class="vozlista" id="vozMias" style="max-height:200px"><p class="faint" style="padding:8px">Aún no has guardado ninguna. Elige una voz y pulsa «☆ Guardar».</p></div>
                 <details id="vozBuscar" style="margin-top:6px">
                   <summary>Buscar voces</summary>
                   <div class="row" style="margin-top:8px">
@@ -1254,7 +1257,38 @@ let vozSel = null, vozPagina = 1, vozVoces = [], vozTextoSucio = false, vozTexto
 const vozPrev = new Audio();
 const GENERO = {female: "Mujer", male: "Hombre"};
 const IDIOMA = {Spanish: "Español", English: "Inglés", Portuguese: "Portugués", French: "Francés", German: "Alemán", Italian: "Italiano"};
+let vozMias = [];
+function pintarMias() {
+  $("vozMias").innerHTML = vozMias.length ? vozMias.map((v, i) => `<div class="vozitem ${vozSel && vozSel.voice_id === v.voice_id ? "sel" : ""}" data-mi="${i}" title="Elegir esta voz">
+      <button class="ghost mini" data-mprev="${i}" title="Escuchar" ${v.preview_url ? "" : "disabled"}>▶</button>
+      <div class="info" style="flex:1"><div>${esc(v.name)}</div><div class="faint">${Number(v.speed || 1).toFixed(2)}×${v.model_id ? " · " + esc(v.model_id) : ""}</div></div>
+      <button class="ghost mini danger" data-mdel="${i}" title="Quitar de Mis voces">✕</button></div>`).join("")
+    : `<p class="faint" style="padding:8px">Aún no has guardado ninguna. Elige una voz y pulsa «☆ Guardar».</p>`;
+}
+async function cargarMias() { try { vozMias = (await api("/api/ai33/guardadas")).voces || []; pintarMias(); } catch {} }
+$("vozMias").addEventListener("click", async (e) => {
+  const pv = e.target.closest("[data-mprev]");
+  if (pv) { e.stopPropagation(); return escuchar(vozMias[+pv.dataset.mprev].preview_url); }
+  const del = e.target.closest("[data-mdel]");
+  if (del) { e.stopPropagation(); const v = vozMias[+del.dataset.mdel];
+    if (!confirm(`¿Quitar «${v.name}» de Mis voces?`)) return;
+    try { vozMias = (await api("/api/ai33/quitar_voz", {voice_id: v.voice_id})).voces; pintarMias(); } catch (err) { toast(err.message); } return; }
+  const it = e.target.closest("[data-mi]"); if (!it) return;
+  const v = vozMias[+it.dataset.mi];
+  vozSel = {voice_id: v.voice_id, name: v.name, preview_url: v.preview_url};
+  aplicarVozCfg(v); pintarVozSel(); pintarVoces(); toast(`Voz «${v.name}» elegida.`);
+});
+$("vozGuardarSel").onclick = async () => {
+  if (!vozSel) return;
+  try {
+    vozMias = (await api("/api/ai33/guardar_voz", {voice_id: vozSel.voice_id, name: vozSel.name, preview_url: vozSel.preview_url || "",
+      speed: Number($("vozSpeed").value), model_id: $("vozModelo").value})).voces;
+    pintarMias(); toast(`«${vozSel.name}» guardada en Mis voces.`);
+  } catch (err) { toast(err.message); }
+};
 function pintarVozSel() {
+  $("vozGuardarSel").hidden = !vozSel;
+  if (typeof pintarMias === "function" && $("vozMias")) pintarMias();
   $("vozElegida").textContent = vozSel ? vozSel.name + (vozSel.voice_id !== vozSel.name ? ` · ${vozSel.voice_id}` : "") : "Ninguna elegida";
   $("vozPrevSel").hidden = !(vozSel && vozSel.preview_url);
   $("vozBuscar").open = !vozSel || $("vozBuscar").open;
@@ -1272,6 +1306,7 @@ async function cargarAi33(conCreditos) {
     $("vozCred").textContent = r.clave ? (r.creditos != null ? `${Number(r.creditos).toLocaleString("es-ES")} créditos · clave ${r.clave}` : `clave ${r.clave}`) : "sin clave";
     if (r.error) $("vozCred").textContent = r.error;
     if (!vozSel && r.ultima_voz && r.ultima_voz.voice_id) { vozSel = r.ultima_voz; aplicarVozCfg(r.ultima_voz); }
+    if (r.clave) await cargarMias();
     pintarVozSel();
   } catch (e) { $("vozCred").textContent = e.message; }
 }

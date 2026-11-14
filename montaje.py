@@ -338,22 +338,50 @@ def motion(efecto: str, frames: int) -> tuple[str, str, str]:
     return f"1+{ZOOM}*{ease}", cx, cy
 
 
+FUNDIDO_VIDEO_IMAGEN = 0.4     # fundido entre el clip y su imagen cuando la frase es más larga
+
+
 def render_video_piece(p: dict, out: Path, W: int, H: int, seconds: float, enc: list[str]) -> str:
-    """El clip de Flow ajustado a lo que dura su frase: si sobra se corta; si
-    falta se ralentiza (hasta x2) y, si aún falta, se congela el último fotograma."""
+    """El clip de Flow en su frase, siempre a velocidad normal:
+    - si sobra clip, se corta;
+    - si la frase es más larga, después del clip entra su imagen (con fundido)
+      con un movimiento suave (zoom o paneo) hasta completar la frase."""
     clip = duration(p["video_path"])
+    vf_v = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={W}:{H},setsar=1")
+    F = FUNDIDO_VIDEO_IMAGEN
+    if clip <= 0 or clip >= seconds - 0.25 or not p.get("image_path"):
+        frames = max(int(round(seconds * FPS)), 1)
+        run(["-i", str(p["video_path"]), "-vf", vf_v + ",tpad=stop_mode=clone:stop_duration=2",
+             *enc, "-frames:v", str(frames), str(out)])
+        if clip < seconds - 0.25:
+            return f"vídeo {clip:.1f}s + congelado (no hay imagen)"
+        return f"vídeo {clip:.1f}s" + (" recortado" if clip > seconds + 0.05 else "")
+    # 1) el clip entero, a velocidad normal
+    v_part = out.with_name(out.stem + "_v.mp4")
+    run(["-i", str(p["video_path"]), "-vf", vf_v, *enc,
+         "-frames:v", str(max(int(round(clip * FPS)), 1)), str(v_part)])
+    # 2) su imagen con movimiento durante el resto de la frase (+ el fundido)
+    resto = seconds - (clip - F)
+    efecto = p.get("efecto") if p.get("efecto") in EFECTOS else "zoom_in"
+    i_part = out.with_name(out.stem + "_i.mp4")
+    _imagen_con_movimiento(p["image_path"], efecto, i_part, W, H, resto, enc)
+    # 3) unirlos con un fundido corto: total = duración de la frase
+    _xfade_chain([v_part, i_part], [clip - F, resto], F, out, tail=False, enc=enc)
+    for t in (v_part, i_part):
+        t.unlink(missing_ok=True)
+    return f"vídeo {clip:.1f}s + imagen {resto - F:.1f}s ({efecto})"
+
+
+def _imagen_con_movimiento(img: Path, efecto: str, out: Path, W: int, H: int, seconds: float,
+                           enc: list[str]) -> None:
     frames = max(int(round(seconds * FPS)), 1)
-    factor = 1.0
-    if clip > 0 and clip < seconds:
-        factor = min(seconds / clip, 2.0)
-    resto = max(seconds - clip * factor, 0) + 0.5
-    vf = (f"setpts={factor:.4f}*PTS,fps={FPS},"
-          f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,"
-          f"tpad=stop_mode=clone:stop_duration={resto:.3f}")
-    run(["-i", str(p["video_path"]), "-vf", vf, *enc, "-frames:v", str(frames), str(out)])
-    if factor > 1.001:
-        return f"vídeo {clip:.1f}s ralentizado x{factor:.2f}" + (" + congelado" if clip * factor < seconds - 0.05 else "")
-    return f"vídeo {clip:.1f}s" + (" recortado" if clip > seconds + 0.05 else "")
+    z, x, y = motion(efecto, frames)
+    # Se amplía antes del zoompan (x3) para que el movimiento no tiemble.
+    vf = (f"scale={W * 3}:{H * 3}:force_original_aspect_ratio=increase:flags=lanczos,"
+          f"crop={W * 3}:{H * 3},"
+          f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={W}x{H}:fps={FPS},setsar=1")
+    run(["-loop", "1", "-i", str(img), "-vf", vf, *enc, "-frames:v", str(frames), str(out)])
 
 
 def render_piece(p: dict, out: Path, W: int, H: int, seconds: float) -> str:

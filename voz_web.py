@@ -137,6 +137,8 @@ def manejar_get(path: str, q: dict) -> dict | None:
             except Exception as e:
                 out["error"] = str(e)
         return out
+    if path == "/api/ai33/guardadas":
+        return {"voces": ai33.load_config().get("guardadas") or []}
     if path == "/api/ai33/voces":
         g = lambda k, d="": q.get(k, [d])[0]
         return ai33.voces(provider=g("provider", "elevenlabs"), search=g("search"), language=g("language"),
@@ -152,6 +154,23 @@ def manejar_post(path: str, data: dict, pdir_de, audio_ext: set, guardar_ajuste)
         ai33.creditos(key=k)                       # comprobar que funciona
         ai33.save_config(api_key=k)
         return {"ok": True}
+    if path == "/api/ai33/guardar_voz":
+        vid = (data.get("voice_id") or "").strip()
+        if not vid:
+            raise ai33.Ai33Error("Elige primero una voz.")
+        voz = {"voice_id": vid, "name": (data.get("name") or vid).strip(),
+               "preview_url": data.get("preview_url") or "",
+               "speed": float(data.get("speed") or 1), "model_id": data.get("model_id") or "",
+               "nota": (data.get("nota") or "").strip()[:80]}
+        lista = [v for v in (ai33.load_config().get("guardadas") or []) if v.get("voice_id") != vid]
+        lista.insert(0, voz)
+        ai33.save_config(guardadas=lista)
+        return {"voces": lista}
+    if path == "/api/ai33/quitar_voz":
+        vid = data.get("voice_id") or ""
+        lista = [v for v in (ai33.load_config().get("guardadas") or []) if v.get("voice_id") != vid]
+        ai33.save_config(guardadas=lista)
+        return {"voces": lista}
     name = data.get("name") or ""
     if not path.startswith("/api/ai33/"):
         return None
