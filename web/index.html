@@ -1148,7 +1148,7 @@ async function rehacer(planos) {
   if (!planos.length) return;
   const cuentas = cuentasMarcadas(); if (!cuentas.length) return toast("Elige al menos una cuenta.");
   const txt = planos.length === 1 ? planos[0] : `${planos.length} imágenes`;
-  if (!confirm(`¿Rehacer ${txt}? Se usa el prompt que tienen ahora en el guion; las demás no se tocan.${cuentas.length > 1 && planos.length > 1 ? `\nSe reparte entre ${Math.min(cuentas.length, planos.length)} cuentas.` : ""}`)) return;
+  if (!confirm(`¿Rehacer ${txt}? La imagen actual se borra y se hace de nuevo con el prompt que tiene ahora en el guion; las demás no se tocan.${cuentas.length > 1 && planos.length > 1 ? `\nSe reparte entre ${Math.min(cuentas.length, planos.length)} cuentas.` : ""}`)) return;
   await guardarYa();
   try { await api("/api/rehacer", {name: P.name, planos, cuentas}); toast(`Rehaciendo ${txt} en un solo lote…`); seleccion.clear(); galeriaFirma = ""; poll(); }
   catch (err) { toast(err.message, 6000); }

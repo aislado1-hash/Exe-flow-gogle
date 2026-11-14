@@ -805,6 +805,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/rehacer":
             planos = data.get("planos") or ([data["plano"]] if data.get("plano") else [])
             cuentas = [c for c in data.get("cuentas", []) if c] or flow_multi.list_accounts()
+            if JOB.running:
+                raise RuntimeError(f"Ya se está generando algo del proyecto «{JOB.project}».")
+            # Rehacer = borrar la foto que había y hacerla de nuevo
+            pdir = _pdir(name)
+            borradas = []
+            for pl in planos:
+                for ext in IMG_EXT:
+                    for h in pdir.rglob(f"{pl}{ext}"):
+                        if not (set(h.parts) & (NO_COPIAR | {"personajes"})):
+                            try:
+                                h.unlink()
+                                borradas.append(pl)
+                            except OSError:
+                                pass
             JOB.start(name, cuentas, solo=planos)
             if planos:
                 with JOB.lock:
