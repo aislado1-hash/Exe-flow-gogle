@@ -12,16 +12,93 @@ Reglas del reparto:
   - Una imagen y los vídeos que la animan ("start": <nombre de la imagen>)
     forman un GRUPO y van siempre a la misma cuenta (se anima desde la
     tarjeta de esa imagen en el proyecto de esa cuenta).
-  - Los grupos se reparten por turnos: grupo 1 -> cuenta1, grupo 2 -> cuenta2…
+  - Los grupos se reparten según los créditos que le quedan a cada cuenta
+    (session/creditos.json, se editan en la web). Sin créditos apuntados,
+    por turnos: grupo 1 -> cuenta1, grupo 2 -> cuenta2…
+    Una cuenta con 0 créditos apuntados no recibe trabajo.
 """
 import asyncio
 import json
 import os
+import signal
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.resolve()
 PROFILES_DIR = BASE_DIR / "session" / "perfiles"
+CREDITOS_FILE = BASE_DIR / "session" / "creditos.json"
+
+
+# ---------------------------------------------------------------------------
+# Créditos de cada cuenta (los apuntas tú en la web)
+# ---------------------------------------------------------------------------
+def load_creditos() -> dict[str, dict]:
+    try:
+        data = json.loads(CREDITOS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_credito(cuenta: str, creditos) -> dict:
+    data = load_creditos()
+    if creditos is None or str(creditos).strip() == "":
+        data.pop(cuenta, None)
+    else:
+        n = int(float(creditos))
+        if n < 0:
+            raise ValueError("Los créditos no pueden ser negativos.")
+        data[cuenta] = {"creditos": n, "fecha": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    CREDITOS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CREDITOS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, CREDITOS_FILE)
+    return data
+
+
+def asignar_grupos(groups: list[list[dict]], cuentas: list[str]) -> list[str]:
+    """Cuenta de cada grupo. Con créditos apuntados, cada grupo va a la cuenta
+    que más créditos tiene por trabajo ya asignado; sin datos, por turnos.
+    Las cuentas con 0 créditos apuntados se saltan (si todas tienen 0, se
+    usan igual: mejor intentarlo que no hacer nada)."""
+    if not cuentas:
+        return []
+    cred = load_creditos()
+    con_dato = {c: cred[c]["creditos"] for c in cuentas
+                if isinstance(cred.get(c), dict) and isinstance(cred[c].get("creditos"), (int, float))}
+    usables = [c for c in cuentas if con_dato.get(c, 1) > 0] or list(cuentas)
+    if not con_dato:
+        return [usables[i % len(usables)] for i in range(len(groups))]
+    media = (sum(con_dato.values()) / len(con_dato)) if con_dato else 1
+    peso = {c: max(con_dato.get(c, media), 1) for c in usables}
+    carga = {c: 0 for c in usables}
+    out = []
+    for g in groups:
+        c = max(usables, key=lambda x: (peso[x] / (carga[x] + 1), -usables.index(x)))
+        out.append(c)
+        carga[c] += len(g)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Parar de verdad: un proceso y todos sus hijos (Chrome incluido)
+# ---------------------------------------------------------------------------
+def kill_tree(proc) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           capture_output=True, timeout=30)
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 def profile_dir(cuenta: str) -> Path:
@@ -80,8 +157,8 @@ def split_for_accounts(data: dict, json_dir: Path, cuentas: list[str]) -> dict[s
 
     groups = group_jobs(data.get("jobs", []))
     per_account = {c: [] for c in cuentas}
-    for idx, group in enumerate(groups):
-        per_account[cuentas[idx % len(cuentas)]].extend(group)
+    for group, cuenta in zip(groups, asignar_grupos(groups, cuentas)):
+        per_account[cuenta].extend(group)
 
     out = {}
     for cuenta, jobs in per_account.items():

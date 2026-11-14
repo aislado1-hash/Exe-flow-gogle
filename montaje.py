@@ -16,6 +16,7 @@ Qué hace:
      Un plano puede forzar su efecto con "efecto": zoom_in, zoom_out,
      paneo_der, paneo_izq, subir, bajar.
   4. Une todo con la voz en off -> outputs\\<proyecto>\\montaje.mp4 (16:9)
+     y/o montaje_vertical.mp4 (9:16, para Shorts/Reels/TikTok; --formato)
      y deja montaje.srt (subtítulos para CapCut) y montaje_planos.txt.
 
 Busca cada imagen como <plano>.png (o .jpg/.webp) dentro de la carpeta.
@@ -36,6 +37,14 @@ if hasattr(sys.stdout, "reconfigure"):
 
 FADE = 0.25     # fundido entre imágenes (s)
 FPS = 30
+MIN_PLANO = 0.3  # lo mínimo que dura un plano en pantalla (s)
+INTERNAS = {"_debug", "_montaje_tmp", "_subidas", "_escenas", "_cuentas", "_rehacer", "_voz", "personajes"}
+# Los tramos intermedios van casi sin pérdida (CRF 4, a simple vista idénticos);
+# la compresión normal (CRF 18) se aplica una sola vez, al vídeo final. Antes
+# cada tramo se comprimía a CRF 18 y otra vez al unirlos (y una 3ª con +25 planos).
+# Sin pérdida total (qp 0) ocupaba ~1,4 GB temporales por cada 36 s de vídeo.
+ENC_TMP = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "4", "-pix_fmt", "yuv420p", "-r", str(FPS)]
+ENC_FINAL = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", str(FPS)]
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +122,7 @@ def pieces_from_guion(jobs: list[dict]) -> list[dict]:
 def find_media(folder: Path, name: str, exts: tuple[str, ...]) -> Path | None:
     for ext in exts:
         hits = sorted(folder.rglob(f"{name}{ext}"), key=lambda p: p.stat().st_mtime, reverse=True)
-        hits = [h for h in hits if "_debug" not in h.parts and "_montaje_tmp" not in h.parts]
+        hits = [h for h in hits if not (set(h.parts) & INTERNAS)]
         if hits:
             return hits[0]
     return None
@@ -207,10 +216,12 @@ def align(pieces: list[dict], words: list[dict], total: float) -> None:
                     break
 
     # El primer plano empieza en 0; los tiempos deben ir siempre hacia delante.
+    # Una frase corta (desde MIN_PLANO) conserva su sitio exacto; solo se
+    # descarta si sale fuera de orden o pegada a la anterior.
     starts[0] = 0.0
     last = 0.0
     for i in range(1, len(starts)):
-        if starts[i] is not None and starts[i] <= last + 0.5:
+        if starts[i] is not None and starts[i] < last + MIN_PLANO:
             starts[i] = None          # fuera de orden o pegado: se reparte
         if starts[i] is not None:
             last = starts[i]
@@ -287,8 +298,7 @@ def render_video_piece(p: dict, out: Path, W: int, H: int, seconds: float, enc: 
 
 def render_piece(p: dict, out: Path, W: int, H: int, seconds: float) -> str:
     frames = max(int(round(seconds * FPS)), 1)
-    enc = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-           "-pix_fmt", "yuv420p", "-r", str(FPS)]
+    enc = ENC_TMP
     if p.get("usar") == "video" and p.get("video_path"):
         return render_video_piece(p, out, W, H, seconds, enc)
     if not p.get("image_path"):
@@ -311,7 +321,7 @@ def join_parts(parts: list[Path], durs: list[float], fade: float, out: Path) -> 
     if fade <= 0 or len(parts) == 1:
         lst = out.with_suffix(".txt")
         lst.write_text("".join(f"file '{x.as_posix()}'\n" for x in parts), encoding="utf-8")
-        run(["-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)])
+        run(["-f", "concat", "-safe", "0", "-i", str(lst), *ENC_FINAL, str(out)])
         return
     # Por tandas para no abrir cientos de archivos a la vez.
     CHUNK = 25
@@ -321,17 +331,21 @@ def join_parts(parts: list[Path], durs: list[float], fade: float, out: Path) -> 
             sub_p, sub_d = parts[k:k + CHUNK], durs[k:k + CHUNK]
             last_group = k + CHUNK >= len(parts)
             g = out.with_name(f"{out.stem}_g{k // CHUNK:03d}.mp4")
-            _xfade_chain(sub_p, sub_d, fade, g, tail=not last_group)
+            _xfade_chain(sub_p, sub_d, fade, g, tail=not last_group, enc=ENC_TMP)
             groups.append(g)
             gdurs.append(sum(sub_d))
-        _xfade_chain(groups, gdurs, fade, out, tail=False)
+        _xfade_chain(groups, gdurs, fade, out, tail=False, enc=ENC_FINAL)
         return
-    _xfade_chain(parts, durs, fade, out, tail=False)
+    _xfade_chain(parts, durs, fade, out, tail=False, enc=ENC_FINAL)
 
 
-def _xfade_chain(parts: list[Path], durs: list[float], fade: float, out: Path, tail: bool) -> None:
+def _xfade_chain(parts: list[Path], durs: list[float], fade: float, out: Path, tail: bool,
+                 enc: list[str] = ENC_FINAL) -> None:
     if len(parts) == 1:
-        shutil.copy(parts[0], out)
+        if enc is ENC_TMP:
+            shutil.copy(parts[0], out)
+        else:
+            run(["-i", str(parts[0]), *enc, str(out)])
         return
     inputs, chain, label, offset = [], [], "[0:v]", 0.0
     for p in parts:
@@ -341,9 +355,7 @@ def _xfade_chain(parts: list[Path], durs: list[float], fade: float, out: Path, t
         nxt = f"[v{k}]"
         chain.append(f"{label}[{k}:v]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}{nxt}")
         label = nxt
-    run([*inputs, "-filter_complex", ";".join(chain), "-map", label,
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-         "-r", str(FPS), str(out)])
+    run([*inputs, "-filter_complex", ";".join(chain), "-map", label, *[e for e in enc if e != "-an"], str(out)])
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +368,8 @@ def main() -> int:
     ap.add_argument("audio", help="Narración completa (mp3, wav, m4a…).")
     ap.add_argument("--guion", help="Ruta del guion JSON (por defecto <carpeta>\\guion.json).")
     ap.add_argument("--res", type=int, default=1080, choices=[720, 1080], help="Altura del vídeo final.")
+    ap.add_argument("--formato", choices=["horizontal", "vertical", "ambos"], default="horizontal",
+                    help="horizontal 16:9 (por defecto), vertical 9:16 o ambos.")
     ap.add_argument("--modelo", default="small", help="Modelo de Whisper: base, small, medium…")
     ap.add_argument("--salida", help="Archivo de salida (por defecto <carpeta>\\montaje.mp4).")
     ap.add_argument("--transicion", choices=["fundido", "corte"], default="fundido",
@@ -366,8 +380,6 @@ def main() -> int:
     ap.add_argument("--ducking", choices=["no", "suave", "media", "fuerte"], default="media",
                     help="Cuánto baja la música cuando hablas (por defecto media).")
     ap.add_argument("--sin-srt", action="store_true", help="No crear el archivo de subtítulos .srt.")
-    ap.add_argument("--short", action="store_true",
-                    help="Salida vertical 9:16 para Shorts (1080x1920 o 720x1280) en vez de 16:9.")
     ap.add_argument("--solo-tiempos", action="store_true",
                     help="Solo calcula cuándo entra cada imagen (montaje_tiempos.json), sin renderizar.")
     args = ap.parse_args()
@@ -382,9 +394,6 @@ def main() -> int:
     if not audio.exists():
         print(f"No encuentro el audio: {audio}")
         return 1
-    W, H = (1920, 1080) if args.res == 1080 else (1280, 720)
-    if args.short:
-        W, H = H, W                     # vertical: 1080x1920 / 720x1280
     out_file = Path(args.salida) if args.salida else folder / "montaje.mp4"
 
     guion = json.loads(guion_path.read_text(encoding="utf-8"))
@@ -393,7 +402,7 @@ def main() -> int:
         print("El guion no tiene planos.")
         return 1
 
-    print(f"MONTAJE: {len(pieces)} planos · audio {audio.name} · {W}x{H}" + (" (Short 9:16)" if args.short else ""))
+    print(f"MONTAJE: {len(pieces)} planos · audio {audio.name}")
     for k, p in enumerate(pieces):
         p["image_path"] = find_media(folder, p["image"], (".png", ".jpg", ".jpeg", ".webp"))
         p["video_path"] = find_media(folder, p["image"], (".mp4",)) if p["usar"] == "video" else None
@@ -439,37 +448,52 @@ def main() -> int:
 
     print("3/3 Montando…")
     fade = 0.0 if args.transicion == "corte" else FADE
-    tmp = folder / "_montaje_tmp"
-    shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir()
-    lines = []
-    try:
-        parts, durs = [], []
-        for i, p in enumerate(pieces, 1):
-            D = max(p["t1"] - p["t0"], 0.3)
-            extra = fade if (fade and i < len(pieces)) else 0.0
-            part = tmp / f"{i:03d}.mp4"
-            note = render_piece(p, part, W, H, D + extra)
-            parts.append(part)
-            durs.append(D)
-            line = f"{ts(p['t0'])} – {ts(p['t1'])}  {p['name']:<14} {D:5.1f}s  {note}"
-            print("   " + line)
-            lines.append(line)
-        video_only = tmp / "video.mp4"
-        join_parts(parts, durs, fade, video_only)
-        musica = Path(args.musica).resolve() if args.musica else None
-        if musica and musica.exists():
-            print(f"   Música: {musica.name} · {args.musica_db:+.0f} dB · ducking {args.ducking}")
-            mix_audio(video_only, audio, musica, total, args.musica_db, args.ducking, out_file, words)
+    formatos = ["horizontal", "vertical"] if args.formato == "ambos" else [args.formato]
+    musica = Path(args.musica).resolve() if args.musica else None
+    lines, salidas = [], []
+    for fmt in formatos:
+        vertical = fmt == "vertical"
+        if vertical:
+            W, H = (1080, 1920) if args.res == 1080 else (720, 1280)
+            destino = out_file if (args.formato == "vertical" and args.salida) \
+                else out_file.with_name(out_file.stem + "_vertical" + out_file.suffix)
         else:
-            run(["-i", str(video_only), "-i", str(audio), "-map", "0:v", "-map", "1:a",
-                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
-                 "-movflags", "+faststart", str(out_file)])
-    finally:
+            W, H = (1920, 1080) if args.res == 1080 else (1280, 720)
+            destino = out_file
+        print(f"— Formato {fmt} ({W}x{H}) -> {destino.name}")
+        tmp = folder / "_montaje_tmp"
         shutil.rmtree(tmp, ignore_errors=True)
+        tmp.mkdir()
+        try:
+            parts, durs = [], []
+            for i, p in enumerate(pieces, 1):
+                D = max(p["t1"] - p["t0"], MIN_PLANO)
+                extra = fade if (fade and i < len(pieces)) else 0.0
+                part = tmp / f"{i:03d}.mp4"
+                note = render_piece(p, part, W, H, D + extra)
+                parts.append(part)
+                durs.append(D)
+                line = f"{ts(p['t0'])} – {ts(p['t1'])}  {p['name']:<14} {D:5.1f}s  {note}"
+                if len(formatos) > 1 or vertical:
+                    line = f"[{fmt}] " + line
+                print("   " + line)
+                lines.append(line)
+            video_only = tmp / "video.mp4"
+            join_parts(parts, durs, fade, video_only)
+            if musica and musica.exists():
+                print(f"   Música: {musica.name} · {args.musica_db:+.0f} dB · ducking {args.ducking}")
+                mix_audio(video_only, audio, musica, total, args.musica_db, args.ducking, destino, words)
+            else:
+                run(["-i", str(video_only), "-i", str(audio), "-map", "0:v", "-map", "1:a",
+                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+                     "-movflags", "+faststart", str(destino)])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        salidas.append(destino)
+        print(f"   OK -> {destino}")
 
     (folder / "montaje_planos.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"\nOK -> {out_file}")
+    print(f"\nOK -> {', '.join(str(d) for d in salidas)}")
     print(f"Tiempos de cada plano: {folder / 'montaje_planos.txt'}")
     if con_texto and not args.sin_srt:
         print(f"Subtítulos: {folder / 'montaje.srt'}")
