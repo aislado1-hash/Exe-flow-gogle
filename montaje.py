@@ -24,6 +24,7 @@ Busca cada imagen como <plano>.png (o .jpg/.webp) dentro de la carpeta.
 import argparse
 import difflib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -64,9 +65,19 @@ def ffmpeg_exe() -> str:
 FFMPEG = None
 
 
+# Limitar el render al 75 % del procesador (tarda más, pero el PC sigue usable).
+USO_CPU = 0.75
+HILOS = max(1, int((os.cpu_count() or 4) * USO_CPU))
+# En Windows, además, prioridad «por debajo de lo normal».
+_PRIORIDAD = {"creationflags": 0x00004000} if os.name == "nt" else {}
+
+
 def run(args: list[str]) -> None:
-    r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    # -threads va justo antes del archivo de salida (el último argumento)
+    args = [*args[:-1], "-threads", str(HILOS), args[-1]]
+    r = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
+                        "-filter_threads", str(HILOS), "-filter_complex_threads", str(HILOS), *args],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", **_PRIORIDAD)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip()[-800:])
 
@@ -149,7 +160,7 @@ def transcribe(audio: Path, model_size: str) -> list[dict]:
     last_error = None
     for device, ctype in (("cuda", "float16"), ("cpu", "int8")):
         try:
-            model = WhisperModel(model_size, device=device, compute_type=ctype)
+            model = WhisperModel(model_size, device=device, compute_type=ctype, cpu_threads=HILOS)
             segments, _ = model.transcribe(samples, language="es", word_timestamps=True,
                                            vad_filter=True)
             words = [{"w": w.word.strip(), "start": w.start, "end": w.end}
