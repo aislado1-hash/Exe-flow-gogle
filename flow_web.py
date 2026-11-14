@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import flow_multi
 import voz_web
+import revisar_imagenes
 
 BASE_DIR = Path(__file__).parent.resolve()
 WEB_DIR = BASE_DIR / "web"
@@ -213,7 +214,19 @@ class Job:
             if not jobs:
                 raise RuntimeError("No encuentro esos planos en el guion.")
         if solo_faltan:
-            jobs = [j for j in jobs if not find_image(_pdir(project), j["name"])]
+            # Las que faltan + las que están dañadas (descarga cortada)
+            def falta(j):
+                img = find_image(_pdir(project), j["name"])
+                if not img:
+                    return True
+                hecha, motivo = revisar_imagenes.resultado(img)
+                if not hecha:
+                    motivo = revisar_imagenes.revisar(img)
+                if motivo:
+                    img.unlink(missing_ok=True)
+                    return True
+                return False
+            jobs = [j for j in jobs if falta(j)]
             if not jobs:
                 raise RuntimeError("No falta ninguna imagen.")
         accounts = flow_multi.list_accounts()
@@ -495,6 +508,7 @@ def project_state(project: str, with_guion: bool = False) -> dict:
     guion = load_guion(project)
     live = JOB.project == pdir.name
     planos = []
+    sin_revisar: list[Path] = []
     with JOB.lock:
         for j in guion["jobs"]:
             if j.get("type", "image") != "image":
@@ -514,6 +528,11 @@ def project_state(project: str, with_guion: bool = False) -> dict:
                     item["detalle"] = "ya tiene imagen; se volverá a generar"
             if img:
                 item["thumb"] = _url(img)
+                revisada, motivo = revisar_imagenes.resultado(img)
+                if not revisada:
+                    sin_revisar.append(img)
+                elif motivo:
+                    item["danada"] = motivo
             vid = find_video(pdir, name)
             v = {"estado": "hecho" if vid else "", "detalle": ""}
             if live and name in JOB.vplanos:
@@ -532,7 +551,8 @@ def project_state(project: str, with_guion: bool = False) -> dict:
         render = {"running": RENDER.running and rlive, "mode": RENDER.mode if rlive else None,
                   "exit_code": RENDER.exit_code if rlive else None, "log": RENDER.log[-200:] if rlive else [],
                   "otro": RENDER.project if RENDER.running and not rlive else None}
-    out = {"project": pdir.name, "planos": planos, "gen": gen, "render": render,
+    revisando = revisar_imagenes.revisar_en_segundo_plano(sin_revisar) if sin_revisar else 0
+    out = {"project": pdir.name, "planos": planos, "gen": gen, "render": render, "revisando": revisando,
            "media": project_media(pdir)}
     if with_guion:
         g = {k: v for k, v in guion.items() if k != "references"}

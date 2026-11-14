@@ -169,6 +169,12 @@
   .foto .txt { font-size: 12px; color: var(--muted); font-style: italic; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .foto .err { color: var(--err); font-size: 12px; }
   .foto { position: relative; }
+  .foto.danada { border-color: #e5484d !important; box-shadow: 0 0 0 2px #e5484d inset; }
+  .foto .tagdan { position: absolute; top: 8px; left: 8px; z-index: 2; background: #e5484d; color: #fff;
+                  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .aviso-danadas { border: 1px solid #e5484d; background: rgba(229,72,77,.12); border-radius: 10px;
+                   padding: 12px 14px; margin: 0 0 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .aviso-danadas .txt { flex: 1; min-width: 220px; }
   .foto.convideo { border-color: #f5c518 !important; box-shadow: 0 0 0 2px #f5c518 inset, 0 0 14px rgba(245,197,24,.25); }
   .foto .tagvid { position: absolute; top: 8px; right: 8px; z-index: 2; background: #f5c518; color: #111;
                   font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; pointer-events: none; }
@@ -349,6 +355,7 @@
         <section class="card">
           <div class="head"><h2>Imágenes</h2><span class="muted" id="imgInfo"></span></div>
           <div class="links" id="links"></div>
+          <div class="aviso-danadas" id="avisoDanadas" hidden></div>
           <div class="galeria" id="galeria"></div>
           <details><summary>Ver registro</summary><pre class="log" id="log"></pre></details>
         </section>
@@ -1119,16 +1126,18 @@ function pintarEstado(s) {
   else { b.className = "badge"; b.textContent = "en edición"; }
   // imágenes
   const hechas = s.planos.filter(p => p.thumb).length;
-  $("imgInfo").textContent = `${hechas}/${s.planos.length} imágenes`;
+  $("imgInfo").textContent = `${hechas}/${s.planos.length} imágenes` + (s.revisando ? ` · revisando ${s.revisando}…` : "");
+  pintarAvisoDanadas(s, g);
   $("links").innerHTML = Object.entries(g.links || {}).map(([c, u]) => `<p class="faint">Proyecto de <b>${esc(c)}</b> en Flow: <a href="${esc(u)}" target="_blank" rel="noopener">abrir</a></p>`).join("");
-  const firma = JSON.stringify(s.planos.map(p => [p.name, p.estado, p.thumb, p.cuenta, p.detalle, p.video, (P.planos.find(x => x.name === p.name) || {}).usar])) + g.running + [...seleccion].join();
+  const firma = JSON.stringify(s.planos.map(p => [p.name, p.estado, p.thumb, p.cuenta, p.detalle, p.video, p.danada, (P.planos.find(x => x.name === p.name) || {}).usar])) + g.running + [...seleccion].join();
   if (firma !== galeriaFirma) {
     galeriaFirma = firma;
     $("galeria").innerHTML = s.planos.length ? s.planos.map(p => {
       const pl = P.planos.find(x => x.name === p.name);
       const v = p.video || {}, usaVid = pl && pl.usar === "video" && v.url;
       const ocup = g.running || g.otro;
-      return `<div class="foto ${v.url ? "convideo" : ""}">
+      return `<div class="foto ${v.url ? "convideo" : ""} ${p.danada ? "danada" : ""}">
+        ${p.danada ? `<span class="tagdan" title="${esc(p.danada)}">⚠ dañada</span>` : ""}
         ${v.url ? `<span class="tagvid" title="Este plano tiene imagen y vídeo">🎬 vídeo</span>` : ""}
         <div class="img">${usaVid ? `<video src="${esc(v.url)}" muted loop playsinline preload="metadata" controls></video>` : p.thumb ? `<img src="${esc(p.thumb)}" data-zoom="${esc(p.thumb)}" alt="" loading="lazy">` : (p.estado === "generando" ? "generando…" : "sin imagen")}</div>
         <div class="pie">
@@ -1241,6 +1250,26 @@ $("usarTodoVid").onclick = () => usarTodo("video");
 $("usarTodoImg").onclick = () => usarTodo("imagen");
 $("selNinguna").onclick = () => { seleccion.clear(); galeriaFirma = ""; pintarEstado(P.estado); };
 $("rehacerSel").onclick = () => rehacer([...seleccion]);
+let avisoCerrado = "";
+function pintarAvisoDanadas(s, g) {
+  const dan = s.planos.filter(p => p.danada && p.estado !== "generando" && p.estado !== "pendiente");
+  const clave = dan.map(p => p.name).join(",");
+  const box = $("avisoDanadas");
+  if (!dan.length || clave === avisoCerrado) { box.hidden = true; return; }
+  const nombres = dan.slice(0, 6).map(p => p.name).join(", ") + (dan.length > 6 ? ` y ${dan.length - 6} más` : "");
+  const nuevo = box.hidden || box.dataset.clave !== clave;
+  box.dataset.clave = clave;
+  box.innerHTML = `<div class="txt"><b>⚠ ${dan.length === 1 ? "1 imagen parece dañada" : dan.length + " imágenes parecen dañadas"}</b>
+      <div class="faint">${esc(nombres)} · ${esc(dan[0].danada)}. Revísalas: salen con borde rojo.</div></div>
+    <button class="mini" id="danSel">Seleccionarlas</button>
+    <button class="mini primary" id="danRehacer" ${g.running || g.otro ? "disabled" : ""}>↻ Rehacerlas</button>
+    <button class="ghost mini" id="danCerrar" title="Ocultar este aviso">✕</button>`;
+  box.hidden = false;
+  if (nuevo) toast(`⚠ ${dan.length} imagen(es) parecen dañadas. Revísalas en Imágenes.`, 6000);
+  $("danSel").onclick = () => { dan.forEach(p => seleccion.add(p.name)); galeriaFirma = ""; pintarEstado(P.estado); toast("Seleccionadas: pulsa «↻ Rehacer seleccionadas» o revísalas antes."); };
+  $("danRehacer").onclick = () => rehacer(dan.map(p => p.name));
+  $("danCerrar").onclick = () => { avisoCerrado = clave; box.hidden = true; };
+}
 async function rehacer(planos) {
   if (!planos.length) return;
   const cuentas = cuentasMarcadas(); if (!cuentas.length) return toast("Elige al menos una cuenta.");
