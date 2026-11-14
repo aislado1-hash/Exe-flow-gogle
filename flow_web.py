@@ -34,6 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import flow_multi
+import voz_web
 
 BASE_DIR = Path(__file__).parent.resolve()
 WEB_DIR = BASE_DIR / "web"
@@ -52,7 +53,11 @@ AJUSTES_DEF = {"image_model": "Nano Banana 2.1", "ratio": "16:9", "transicion": 
                "srt": True, "subtitulos_previa": False, "tipo": "camioneras",
                "musica_db": -14, "ducking": "media",
                "video_model": "Omni 1.2 Flash", "video_duracion": "auto",
-               "salida": "horizontal"}          # formato del render: "horizontal" (16:9) o "short" (9:16)
+               "salida": "horizontal",          # formato del render
+               "voz_ai33": None,                # última voz de ai33.pro usada en el proyecto
+               "formato": "horizontal",         # render: horizontal | vertical | ambos
+               "whisper": "medium",             # modelo de Whisper para los tiempos
+               "reusar_flow": True}          # formato del render: "horizontal" (16:9) o "short" (9:16)
 VIDEO_MIN, VIDEO_MAX = 4, 8                  # duración de los clips que se piden a Flow
 # Archivos que no se copian al duplicar un proyecto
 NO_COPIAR = {"_montaje_tmp", "_debug", "_rehacer", "_cuentas"}
@@ -410,8 +415,10 @@ class Render:
         if musica and mode == "render":
             cmd += ["--musica", str(musica), "--musica-db", str(float(aj["musica_db"])),
                     "--ducking", aj["ducking"] if aj["ducking"] in ("no", "suave", "media", "fuerte") else "media"]
-        if aj.get("salida") == "short":
-            cmd.append("--short")
+        formato = aj.get("formato") or ("vertical" if aj.get("salida") == "short" else "horizontal")
+        cmd += ["--formato", formato if formato in ("horizontal", "vertical", "ambos") else "horizontal"]
+        if aj.get("whisper") in ("base", "small", "medium", "large-v3"):
+            cmd += ["--modelo", aj["whisper"]]
         if mode == "tiempos":
             cmd.append("--solo-tiempos")
         if not aj.get("srt", True):
@@ -534,6 +541,10 @@ def project_state(project: str, with_guion: bool = False) -> dict:
     out["personajes"] = [{"name": k, "url": _url(v)} for k, v in personajes(project).items()]
     est = estilo_proyecto(project)
     out["estilo"] = _url(est) if est else None
+    try:
+        out["voz"] = voz_web.estado_voz(pdir, pdir.name, _url, find_audio(pdir, "narracion"))
+    except Exception as e:
+        out["voz"] = {"texto": "", "items": [], "job": {"estado": "error", "error": str(e)}}
     return out
 
 
@@ -653,7 +664,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/outputs/"):
                 return self._file(OUT_DIR / path[len("/outputs/"):], OUT_DIR)
             if path == "/api/cuentas":
-                return self._json({"cuentas": flow_multi.list_accounts()})
+                return self._json({"cuentas": flow_multi.list_accounts(),
+                                   "creditos": flow_multi.load_creditos()})
+            if path.startswith("/api/ai33/"):
+                r = voz_web.manejar_get(path, q)
+                if r is not None:
+                    return self._json(r)
             if path == "/api/refs":
                 grupo = q.get("grupo", [""])[0]
                 d, pref = (SHORTS_DIR, "/refs_shorts/") if grupo == "shorts" else (REFS_DIR, "/refs/")
@@ -689,6 +705,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _post(self, path: str, data: dict):
         name = data.get("name", "")
+        # --- narración con ai33.pro ---
+        if path.startswith("/api/ai33/"):
+            def guardar_ajuste(proj, k, v):
+                aj = {**load_ajustes(proj), k: v}
+                _write_json(_pdir(proj) / "ajustes.json", aj)
+            r = voz_web.manejar_post(path, data, _pdir, AUDIO_EXT, guardar_ajuste)
+            if r is not None:
+                return self._json(r)
+        # --- créditos apuntados de cada cuenta ---
+        if path == "/api/creditos":
+            return self._json({"creditos": flow_multi.save_credito(data.get("cuenta", ""), data.get("creditos"))})
         # --- referencias ---
         if path == "/api/ref":
             ref = _safe_name(data.get("ref", ""))

@@ -111,7 +111,9 @@ def profile_dir(cuenta: str) -> Path:
 def list_accounts() -> list[str]:
     if not PROFILES_DIR.exists():
         return []
-    return sorted(p.name for p in PROFILES_DIR.iterdir() if p.is_dir() and any(p.iterdir()))
+    # «downloads» es la carpeta de descargas de Chrome, no una cuenta
+    return sorted(p.name for p in PROFILES_DIR.iterdir()
+                  if p.is_dir() and p.name.lower() != "downloads" and any(p.iterdir()))
 
 
 def group_jobs(jobs: list[dict]) -> list[list[dict]]:
